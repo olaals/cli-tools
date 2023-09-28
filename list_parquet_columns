@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+
+import argparse
+import pandas as pd
+from pathlib import Path
+
+def list_columns(file_path: Path) -> None:
+    try:
+        df = pd.read_parquet(file_path)
+        print("Columns in the Parquet file:")
+        print(df.columns.tolist())
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="List columns in a Parquet file.")
+    parser.add_argument("file_path", type=Path, help="Path to the Parquet file.")
+    args = parser.parse_args()
+
+    list_columns(args.file_path)
+
