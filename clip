@@ -1,19 +1,45 @@
 #!/bin/bash
 
 # clip.sh
-# Usage: ./clip.sh filename.txt
+# Usage: ./clip.sh [--tree] filename1.txt filename2.txt ...
 
-if [ "$#" -ne 1 ]; then
-	echo "Usage: $0 filename.txt"
+# Initialize an empty string to hold the final content
+final_content=""
+include_tree=false
+
+# Handle optional --tree flag
+if [ "$1" == "--tree" ]; then
+	include_tree=true
+	shift 1
+fi
+
+# Check for minimum number of arguments
+if [ "$#" -lt 1 ]; then
+	echo "Usage: $0 [--tree] filename1.txt filename2.txt ..."
 	exit 1
 fi
 
-file_name="$1"
-
-if [ ! -f "$file_name" ]; then
-	echo "File $file_name does not exist."
-	exit 1
+# If --tree flag is present, add the output of `tree -L 1` to final_content
+if [ "$include_tree" = true ]; then
+	final_content+="== File Tree ==\n"
+	final_content+="$(tree -L 1)\n\n"
 fi
 
-cat "$file_name" | pbcopy
-echo "Contents of $file_name copied to clipboard."
+# Loop through all arguments
+for file_name in "$@"; do
+	if [ ! -f "$file_name" ]; then
+		echo "File $file_name does not exist."
+		exit 1
+	fi
+
+	# Add the filename to final_content
+	final_content+="== $file_name ==\n"
+
+	# Add the content of the file to final_content
+	final_content+="$(cat "$file_name")\n\n"
+done
+
+# Copy the final_content to clipboard
+echo -e "$final_content" | pbcopy
+
+echo "Contents of files copied to clipboard."
