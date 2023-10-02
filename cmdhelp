@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+
+import json
+import sys
+import argparse
+from thefuzz import fuzz
+from typing import List, Tuple, Union
+
+def load_commands_from_json(file_path: str) -> dict:
+    with open(file_path, 'r') as f:
+        return json.load(f)
+
+def save_commands_to_json(file_path: str, command_dict: dict) -> None:
+    with open(file_path, 'w') as f:
+        json.dump(command_dict, f, indent=2)
+
+def find_closest_commands(input_query: str, command_dict: dict) -> List[Tuple[int, str]]:
+    func = fuzz.token_set_ratio
+    similarity_scores = [(func(input_query, command), command) for command in command_dict.keys()]
+    similarity_scores.sort(key=lambda x: x[0], reverse=True)
+    return similarity_scores[:5]
+
+def main(args: Union[argparse.Namespace, None] = None) -> None:
+    parser = argparse.ArgumentParser(description="Find or add useful command-line commands")
+    parser.add_argument("--add", nargs=2, help="Add a new command and description")
+    parser.add_argument("query", nargs="*", help="Query for existing commands")
+
+    if args is None:
+        args = parser.parse_args()
+
+    command_dict = load_commands_from_json("cmdhelpdict.json")
+
+    if args.add:
+        command, description = args.add
+        command_dict[command] = description
+        save_commands_to_json("cmdhelpdict.json", command_dict)
+        print(f"Added: {command} - {description}")
+    elif args.query:
+        input_query = ' '.join(args.query)
+        closest_commands = find_closest_commands(input_query, command_dict)
+        for score, command in closest_commands:
+            # only print command and score
+            print(f"{score}: {command}")
+    else:
+        print("Please provide a query or use --add to add a new command.")
+
+if __name__ == "__main__":
+    main()
+
