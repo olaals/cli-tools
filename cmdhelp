@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-
+import os
 import json
 import sys
 import argparse
 from thefuzz import fuzz
 from typing import List, Tuple, Union
+
+def get_cli_tools_dir():
+    this_file_path = os.path.dirname(os.path.realpath(__file__))
+    return this_file_path
 
 def load_commands_from_json(file_path: str) -> dict:
     with open(file_path, 'r') as f:
@@ -28,12 +32,15 @@ def main(args: Union[argparse.Namespace, None] = None) -> None:
     if args is None:
         args = parser.parse_args()
 
-    command_dict = load_commands_from_json("cmdhelpdict.json")
+
+    this_file_path = get_cli_tools_dir()
+    cmdhelp_path = os.path.join(this_file_path, "cmdhelpdict.json")
+    command_dict = load_commands_from_json(cmdhelp_path)
 
     if args.add:
         command, description = args.add
         command_dict[command] = description
-        save_commands_to_json("cmdhelpdict.json", command_dict)
+        save_commands_to_json(cmdhelp_path, command_dict)
         print(f"Added: {command} - {description}")
     elif args.query:
         input_query = ' '.join(args.query)
