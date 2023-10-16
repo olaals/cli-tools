@@ -19,7 +19,7 @@ def save_commands_to_json(file_path: str, command_dict: dict) -> None:
         json.dump(command_dict, f, indent=2)
 
 def find_closest_commands(input_query: str, command_dict: dict) -> List[Tuple[int, str]]:
-    func = fuzz.token_set_ratio
+    func = fuzz.partial_ratio
     similarity_scores = [(func(input_query, command), command) for command in command_dict.keys()]
     similarity_scores.sort(key=lambda x: x[0], reverse=True)
     return similarity_scores[:5]

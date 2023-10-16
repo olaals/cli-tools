@@ -33,7 +33,7 @@ fi
 # If --tree flag is present, add the output of `tree` to final_content
 if [ "$include_tree" = true ]; then
 	final_content+="== File Tree ==\n"
-	final_content+="$(tree -L 1)\n\n"
+	final_content+="$(tree -L 3 --gitignore)\n\n"
 fi
 
 # If --cmd flag is present, run the command and add its output to final_content

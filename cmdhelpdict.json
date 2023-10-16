@@ -5,5 +5,6 @@
   "rg \"example\"": "ripgrep, often abbreviated as rg, is a command-line search tool that recursively searches your current directory for a regex pattern. It's written in Rust and designed to be very fast, largely because it efficiently traverses directories and reads files while also taking advantage of Rust's performance characteristics.",
   "az network bastion ssh --name MyBastionHost --resource-group MyResourceGroup --target-resource-id vmResourceId --auth-type AAD": "SSH to virtual machine using Azure Bastion using AAD.",
   "az network bastion ssh --name MyBastionHost --resource-group MyResourceGroup --target-resource-id vmResourceId --auth-type ssh-key --username xyz --ssh-key C:/filepath/sshkey.pem": "SSH to virtual machine using Azure Bastion using ssh key file.",
-  "git checkout HEAD -- <file>": "Reset file to HEAD/last commit"
+  "git checkout HEAD -- <file>": "Reset file to HEAD/last commit",
+  "az account set --subscription <Your-Subscription-ID>": "Set subscription Azure sub"
 }
