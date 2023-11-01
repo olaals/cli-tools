@@ -1,0 +1,66 @@
+#!/bin/bash
+
+# Function to create YAML config file
+create_yaml() {
+	cat <<-EOM
+		# Dynamically generated blobfuse2 YAML
+		allow-other: true
+		logging:
+		  type: syslog
+		  level: log_debug
+		components:
+		  - libfuse
+		  - file_cache
+		  - attr_cache
+		  - azstorage
+		libfuse:
+		  attribute-expiration-sec: 120
+		  entry-expiration-sec: 120
+		  negative-entry-expiration-sec: 240
+		file_cache:
+		  path: /datadrive/tmp
+		  timeout-sec: 120
+		  max-size-mb: 4096
+		attr_cache:
+		  timeout-sec: 7200
+		azstorage:
+		  type: adls
+		  account-name: $1
+		  account-key: $2
+		  endpoint: https://$1.blob.core.windows.net
+		  mode: key
+		  container: $3
+	EOM
+}
+
+# Check for the correct number of arguments
+if [ "$#" -lt 3 ]; then
+	echo "Usage: $0 <account_name> <account_key> <container1> [container2 ...]"
+	exit 1
+fi
+
+# Extract storage account and key
+ACCOUNT_NAME="$1"
+ACCOUNT_KEY="$2"
+
+# Remove first two arguments
+shift 2
+
+# Loop through each container and mount it
+for CONTAINER in "$@"; do
+	MOUNT_DIR="/datadrive/$CONTAINER"
+	CONFIG_FILE="/tmp/$CONTAINER.yaml"
+
+	# Create mount directory if it doesn't exist
+	sudo mkdir -p "$MOUNT_DIR"
+	sudo rm -rf /datadrive/tmp/* # Ensure tmp folder is empty
+
+	# Generate YAML configuration
+	create_yaml "$ACCOUNT_NAME" "$ACCOUNT_KEY" "$CONTAINER" >"$CONFIG_FILE"
+
+	# Mount using blobfuse2
+	sudo blobfuse2 mount all "$MOUNT_DIR" --config-file="$CONFIG_FILE"
+
+	# Remove temporary YAML file
+	rm -f "$CONFIG_FILE"
+done
