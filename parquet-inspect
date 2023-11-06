@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+
+import argparse
+import pandas as pd
+from pathlib import Path
+
+def list_columns(file_path: Path) -> None:
+    try:
+        df = pd.read_parquet(file_path)
+        print("Columns in the Parquet file with types:")
+        for column, dtype in df.dtypes.items():
+            print(f"{column}: {dtype}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+def list_unique(file_path: Path, column_name: str) -> None:
+    try:
+        df = pd.read_parquet(file_path)
+        unique_values = df[column_name].dropna().unique()
+        print(f"Unique values in column '{column_name}':")
+        for value in unique_values:
+            print(value)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(prog="parquet-inspect", description="Inspect Parquet files.")
+    subparsers = parser.add_subparsers(dest="command", help="Sub-command help")
+
+    # Sub-parser for the 'columns' command
+    parser_columns = subparsers.add_parser('columns', help="List columns in a Parquet file with their types.")
+    parser_columns.add_argument("file_path", type=Path, help="Path to the Parquet file.")
+    parser_columns.set_defaults(func=list_columns)
+
+    # Sub-parser for the 'unique' command
+    parser_unique = subparsers.add_parser('unique', help="List unique values within a column in a Parquet file.")
+    parser_unique.add_argument("file_path", type=Path, help="Path to the Parquet file.")
+    parser_unique.add_argument("column_name", type=str, help="Column name to list unique values from.")
+    parser_unique.set_defaults(func=list_unique)
+
+    # Parse the arguments
+    args = parser.parse_args()
+
+    # Call the default function based on the sub-command
+    if hasattr(args, 'func'):
+        if args.command == "columns":
+            args.func(args.file_path)
+        elif args.command == "unique":
+            args.func(args.file_path, args.column_name)
+    else:
+        parser.print_help()
+

@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+import os
+import argparse
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+from azure.identity import DefaultAzureCredential
+
+def upload_file_or_dir(storage_account_name: str, container_name: str, blob_path: str, local_path: str, account_key: str = None) -> None:
+    url = f"https://{storage_account_name}.blob.core.windows.net"
+    
+    # Authenticate with storage account key if provided, else use DefaultAzureCredential
+    if account_key:
+        blob_service_client = BlobServiceClient(account_url=url, credential=account_key)
+    else:
+        blob_service_client = BlobServiceClient(account_url=url, credential=DefaultAzureCredential())
+
+    container_client = blob_service_client.get_container_client(container_name)
+
+    if os.path.isfile(local_path):
+        with open(local_path, "rb") as data:
+            blob_name = os.path.join(blob_path, os.path.basename(local_path))
+            container_client.upload_blob(name=blob_name, data=data)
+    elif os.path.isdir(local_path):
+        for root, _, files in os.walk(local_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                with open(file_path, "rb") as data:
+                    blob_name = os.path.join(blob_path, os.path.relpath(file_path, local_path))
+                    container_client.upload_blob(name=blob_name, data=data)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Upload a file or directory to Azure Blob Storage.")
+    parser.add_argument("--account-name", required=True, help="Azure storage account name.")
+    parser.add_argument("--container", required=True, help="Storage account container name.")
+    parser.add_argument("--blob-path", required=True, help="Path inside the storage container.")
+    parser.add_argument("--local-path", required=True, help="Local file or directory path.")
+    parser.add_argument("--account-key", default=None, help="Azure storage account key. If not provided, will use DefaultAzureCredential.")
+
+    args = parser.parse_args()
+    upload_file_or_dir(args.account_name, args.container, args.blob_path, args.local_path, args.account_key)
+
