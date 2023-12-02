@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+
+import subprocess
+import os
+import argparse
+import shutil
+from logging import Logger
+
+logger = Logger(__name__)
+
+def find_and_replace_in_file(file_path: str, old_str: str, new_str: str) -> None:
+    """
+    Find and replace all occurrences of a substring in a file.
+
+    Parameters:
+    file_path (str): The path to the file.
+    old_str (str): The substring to be replaced.
+    new_str (str): The substring to replace with.
+    """
+    logger.info(f"Updating file: {file_path}, old_str: {old_str}, new_str: {new_str}")
+    print(f"Updating file: {file_path}, old_str: {old_str}, new_str: {new_str}")
+    file_path_abs = os.path.abspath(file_path)
+    try:
+        # Read the file contents
+        with open(file_path_abs, 'r') as file:
+            content = file.read()
+
+        # Replace the old string with the new string
+        updated_content = content.replace(old_str, new_str)
+
+        # Write the updated content back to the file
+        with open(file_path, 'w') as file:
+            file.write(updated_content)
+
+        print(f"File updated successfully: {file_path}")
+    except FileNotFoundError:
+        print(f"File not found: {file_path}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
+def update_markdown_references(old_path: str, new_path: str, start_dir: str) -> None:
+    for dirpath, _, filenames in os.walk(start_dir):
+        for filename in filenames:
+            if filename.endswith(".md"):
+                md_path = os.path.join(dirpath, filename)
+                find_and_replace_in_file(md_path, old_path, new_path)
+
+def mvref_handler(args) -> None:
+    old_path, new_path = args.old, args.new
+    if os.path.isdir(new_path):
+        new_path = os.path.join(new_path, os.path.basename(old_path))
+    old_path_abs = os.path.abspath(old_path)
+    new_path_abs = os.path.abspath(new_path)
+    if not os.path.isfile(old_path):
+        print(f"File not found: {old_path}")
+        return
+    try:
+        shutil.move(old_path_abs, new_path_abs)
+        print(f"Moved {old_path} to {new_path}")
+        update_markdown_references(old_path, new_path, ".")
+    except Exception as e:
+        print(f"Error occurred during moving: {e}")
+
+
+
+def convert_png_to_webp_and_remove_png(image_path: str) -> None:
+    try:
+        # Define the WebP path
+        webp_path = os.path.splitext(image_path)[0] + '.webp'
+
+        # Convert image to WebP using ImageMagick
+        subprocess.run(['convert', image_path, webp_path], check=True)
+
+        # Remove the original PNG file
+        os.remove(image_path)
+        
+        print(f"Converted and removed: {image_path}")
+    except subprocess.CalledProcessError as e:
+        print(f"Error occurred while converting {image_path}: {e}")
+    except Exception as e:
+        print(f"Unexpected error occurred: {e}")
+
+def replace_png_with_webp_in_markdown(md_path: str) -> None:
+    try:
+        with open(md_path, 'r') as file:
+            content = file.read()
+
+        content = content.replace('.png', '.webp')
+
+        with open(md_path, 'w') as file:
+            file.write(content)
+
+        print(f"Updated markdown file: {md_path}")
+    except Exception as e:
+        print(f"Error occurred while processing {md_path}: {e}")
+
+def process_directory(directory: str) -> None:
+    for filename in os.listdir(directory):
+        file_path = os.path.join(directory, filename)
+
+        if filename.endswith(".png"):
+            convert_png_to_webp_and_remove_png(file_path)
+        elif filename.endswith(".md"):
+            replace_png_with_webp_in_markdown(file_path)
+
+def convert_png_to_webp_handler(args) -> None:
+    directory = args.dir
+    if os.path.isdir(directory):
+        process_directory(directory)
+    else:
+        print(f"Provided path is not a directory: {directory}")
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Notebook utils for markdown')
+    subparsers = parser.add_subparsers(help='sub-command help', dest='subparser_name')
+
+    # create the parser for the "towebp" command
+    parser_towebp = subparsers.add_parser('towebp', help='convert png to webp')
+    parser_towebp.add_argument('dir', type=str, help='Directory path to process')
+    parser_towebp.set_defaults(func=convert_png_to_webp_handler)
+
+    parser_mvref = subparsers.add_parser('mvref', help='move file and update markdown references')
+    parser_mvref.add_argument('old', type=str, help='Old image path')
+    parser_mvref.add_argument('new', type=str, help='New image path')
+    parser_mvref.set_defaults(func=mvref_handler)
+
+    args = parser.parse_args()
+    if hasattr(args, 'func'):
+        args.func(args)
+    else:
+        parser.print_help()
+
+
