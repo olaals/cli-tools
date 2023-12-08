@@ -58,7 +58,7 @@ def run_md_server(directory=None, port=8000):
 
         # Set up and start the threaded TCP server
         with ThreadedTCPServer(("", port), CustomHandler) as httpd:
-            print(f"Serving files from {directory} on http://localhost:{directory}")
+            print(f"Serving files from {directory} on http://localhost:{port}")
             httpd.serve_forever()
     except KeyboardInterrupt:
         print("Server is stopping...")

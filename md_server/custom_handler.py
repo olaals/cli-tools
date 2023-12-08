@@ -6,6 +6,7 @@ from typing import List
 from .html_gen import get_html, markdown_update_div
 from email.parser import BytesParser
 from io import BytesIO
+from .graph_html import get_html_graph
 
 
 global global_state
@@ -33,6 +34,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path.startswith('/change-theme'):
             print("path starts with /change-theme")
             self.change_theme()
+        elif self.path == '/get_graph':
+            self.get_graph()
         else:
             # Default handler for other paths
             super().do_GET()
@@ -42,6 +45,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_image_upload()
         else:
             super().do_POST()
+
+    def get_graph(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        graph_html = get_html_graph().render_html()
+        self.wfile.write(graph_html.encode('utf-8'))
+
+
 
 
     def last_sent(self):

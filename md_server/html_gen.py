@@ -136,21 +136,30 @@ def get_navbar(css_options):
     dropdown_style = {
         "border-radius": "10px",
         "padding": "5px",
-        "min-width": "350px",
+        "width": "200",
         "position": "relative",
+        "background-color": "rgba(0, 0, 0, 0.0)",
     }
 
     select_style = {
+        "width": "200",
         "appearance": "none",
         "-webkit-appearance": "none",
-        "width": "100%",
         "padding": "0.375em 3em 0.375em 1em",
-        "border": "1px solid #caced1",
-        "border-radius": "0.25rem",
+        "border-radius": "10px",
+        "border": "1px solid rgba(100, 100, 100, 0.8)",
         "cursor": "pointer",
+        "background-color": "rgba(0, 0, 0, 0.0)",
     }
 
-    return html.div(class_="navbar")(
+    return html.div(
+        class_="navbar", 
+        style={
+            "display": "flex",
+            "justify-content": "space-around",
+            "align-items": "center",
+        }
+        )(
         html.div(
             class_="dropdown",
             style=dropdown_style,
@@ -159,6 +168,24 @@ def get_navbar(css_options):
                 *html_options
             )
         ),
+        html.div(
+            html.button(
+                hx_get="/get_graph",
+                hx_target="#updateArea",
+                style={
+                    "border-radius": "10px",
+                    "padding": "5px",
+                    "width": "200px",
+                    "background-color": "rgba(0, 0, 0, 0.0)",
+                    "border": "1px solid rgba(100, 100, 100, 0.8)",
+                    "cursor": "pointer",
+                }
+
+            )(
+                "Graph view",
+            )
+        ),
+
         html.script(DangerouslySetInnerHTML("""
 
         """
@@ -167,11 +194,19 @@ def get_navbar(css_options):
     )
 
 
+def emmpty_div():
+    return html.div(
+        style={
+            "height": "1000px",
+        }
+    )()
+
 def get_body(css_options):
     return html.body(class_="markdown-body")(
         get_navbar(css_options),
         markdown_update_div(),
         get_script(),
+        emmpty_div(),
     )
 
 
