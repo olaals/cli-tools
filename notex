@@ -5,6 +5,7 @@ import os
 import argparse
 import shutil
 from logging import Logger
+from md_server.main import run_md_server
 
 logger = Logger(__name__)
 
@@ -111,6 +112,10 @@ def convert_png_to_webp_handler(args) -> None:
     else:
         print(f"Provided path is not a directory: {directory}")
 
+def start_server_handler(args) -> None:
+    print("Starting server...")
+    run_md_server()
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Notebook utils for markdown')
     subparsers = parser.add_subparsers(help='sub-command help', dest='subparser_name')
@@ -124,6 +129,12 @@ if __name__ == '__main__':
     parser_mvref.add_argument('old', type=str, help='Old image path')
     parser_mvref.add_argument('new', type=str, help='New image path')
     parser_mvref.set_defaults(func=mvref_handler)
+
+    parser_start = subparsers.add_parser('start', help='start a new notebook')
+    # add optional argument of dir but default is current directory
+    parser_start.add_argument('--dir', type=str, help='Directory path to start server in', default='.')
+
+    parser_start.set_defaults(func=start_server_handler)
 
     args = parser.parse_args()
     if hasattr(args, 'func'):
