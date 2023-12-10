@@ -1,12 +1,12 @@
 from .osml import Component, html, DangerouslySetInnerHTML
+import os
+
+def current_file_dir():
+    return os.path.dirname(os.path.realpath(__file__))
 
 
-
-def get_script():
-    return html.script(
-        type="module",
-    )(DangerouslySetInnerHTML(
-"""
+def get_js():
+    return """
 import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
 
 self.currentTheme = 'forest';  // default theme
@@ -75,8 +75,16 @@ document.getElementById('css-selector').addEventListener('change', function() {
     changePrismTheme(prismTheme);
 });
 
+
 """
-      ))
+
+
+
+def get_script():
+    
+    return html.script(
+        type="module",
+    )(DangerouslySetInnerHTML(get_js()))
 
 
 
@@ -246,15 +254,15 @@ def get_html(css_options):
             html.head(
                 html.title("Last Modifed File Tracker"),
                 html.meta(charset="utf-8"),
-                html.link(rel="stylesheet", href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism.min.css"),
+                html.link(rel="stylesheet", href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css"),
                 html.link(rel="stylesheet", href=f"/static/{css_options[0]}", id="theme-link"),
                 html.link(rel="preconnect", href="https://fonts.googleapis.com"),
                 html.link(rel="preconnect", href="https://fonts.gstatic.com", crossorigin=""),
                 html.link(href="https://fonts.googleapis.com/css2?family=Roboto&display=swap", rel="stylesheet"),
                 html.script(src="https://unpkg.com/htmx.org"),
                 html.script(src="https://unpkg.com/htmx.org/dist/ext/sse.js"),
-                html.script(src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"),
-                html.script(src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-python.min.js"),
+                html.script(src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"),
+                html.script(src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"),
             ),
             get_body(css_options),
         ),
