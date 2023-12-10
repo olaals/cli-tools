@@ -70,21 +70,30 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         return os.path.dirname(os.path.realpath(__file__))
 
 
-
     def serve_static_file(self):
         """
-        Serves static files from the static directory.
+        Serves static files from the static directory, including the prism subdirectory.
         """
-        file_name = os.path.basename(self.path)
-        file_path = os.path.join(self.get_dir_of_current_file(), 'static', file_name)
+        path_parts = self.path.strip('/').split('/')
+        if len(path_parts) > 1 and path_parts[0] == 'static':
+            # Build the file path from the parts
+            file_path = os.path.join(self.get_dir_of_current_file(), *path_parts)
 
-        if os.path.exists(file_path) and os.path.isfile(file_path):
-            self.send_response(200)
-            self.send_header("Content-type", "text/css" if file_name.endswith('.css') else "text/plain")
-            self.end_headers()
+            if os.path.exists(file_path) and os.path.isfile(file_path):
+                self.send_response(200)
+                # Determine the content type based on the file extension
+                if file_path.endswith('.css'):
+                    self.send_header("Content-type", "text/css")
+                elif file_path.endswith('.js'):
+                    self.send_header("Content-type", "text/javascript")
+                else:
+                    self.send_header("Content-type", "text/plain")
+                self.end_headers()
 
-            with open(file_path, 'rb') as file:
-                self.wfile.write(file.read())
+                with open(file_path, 'rb') as file:
+                    self.wfile.write(file.read())
+            else:
+                self.send_error(404, "File Not Found")
         else:
             self.send_error(404, "File Not Found")
 

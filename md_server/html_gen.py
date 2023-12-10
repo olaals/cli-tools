@@ -1,12 +1,12 @@
 from .osml import Component, html, DangerouslySetInnerHTML
+import os
+
+def current_file_dir():
+    return os.path.dirname(os.path.realpath(__file__))
 
 
-
-def get_script():
-    return html.script(
-        type="module",
-    )(DangerouslySetInnerHTML(
-"""
+def get_js():
+    return """
 import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
 
 self.currentTheme = 'forest';  // default theme
@@ -26,6 +26,19 @@ function renderMermaid(theme) {
 console.log('Rendering Mermaid diagrams with default theme');
 renderMermaid('forest');
 
+function changePrismTheme(cssFile) {
+    var prismLink = document.getElementById('prism-theme-link');
+    if (!prismLink) {
+        prismLink = document.createElement('link');
+        prismLink.rel = 'stylesheet';
+        prismLink.id = 'prism-theme-link';
+        document.head.appendChild(prismLink);
+    }
+    prismLink.href = "/static/prism/" + cssFile;  // Update the path as needed
+    console.log('Changed Prism theme to: ' + cssFile);
+}
+
+
 
 
 document.body.addEventListener('htmx:sseMessage', function(event) {
@@ -34,6 +47,7 @@ document.body.addEventListener('htmx:sseMessage', function(event) {
     // Re-render Mermaid diagrams after updating the content
     console.log('Re-rendering Mermaid diagrams');
     renderMermaid(self.currentTheme);
+    Prism.highlightAll();
 });
 
 document.body.addEventListener('htmx:afterSwap', function(event) {
@@ -42,6 +56,7 @@ document.body.addEventListener('htmx:afterSwap', function(event) {
     // Re-render Mermaid diagrams after updating the content
     console.log('Re-rendering Mermaid diagrams');
     renderMermaid(self.currentTheme);
+    Prism.highlightAll();
 });
 
 function changeCSS(cssFile) {
@@ -55,10 +70,21 @@ document.getElementById('css-selector').addEventListener('change', function() {
     var mermaidTheme = selectedCSS.includes('dark') ? 'dark' : 'forest';
     console.log('Changing Mermaid theme to: ' + mermaidTheme);
     renderMermaid(mermaidTheme);
+
+    var prismTheme = selectedCSS.includes('dark') ? 'prism-okaidia.css' : 'prism.css'; // Example theme names
+    changePrismTheme(prismTheme);
 });
 
+
 """
-      ))
+
+
+
+def get_script():
+    
+    return html.script(
+        type="module",
+    )(DangerouslySetInnerHTML(get_js()))
 
 
 
@@ -83,6 +109,17 @@ def markdown_update_div():
             "A[Edit a file] -->|SSE| B",
             "B[Update rendered HTML]"
         ),
+        html.code(
+            class_="language-python",
+        )(
+"""
+import os
+
+def sample_function():
+    print("Hello world!")
+
+"""),
+            
         html.script(DangerouslySetInnerHTML(
 """
 function handleDrop(event) {
@@ -217,12 +254,15 @@ def get_html(css_options):
             html.head(
                 html.title("Last Modifed File Tracker"),
                 html.meta(charset="utf-8"),
+                html.link(rel="stylesheet", href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css"),
                 html.link(rel="stylesheet", href=f"/static/{css_options[0]}", id="theme-link"),
                 html.link(rel="preconnect", href="https://fonts.googleapis.com"),
                 html.link(rel="preconnect", href="https://fonts.gstatic.com", crossorigin=""),
                 html.link(href="https://fonts.googleapis.com/css2?family=Roboto&display=swap", rel="stylesheet"),
                 html.script(src="https://unpkg.com/htmx.org"),
                 html.script(src="https://unpkg.com/htmx.org/dist/ext/sse.js"),
+                html.script(src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"),
+                html.script(src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"),
             ),
             get_body(css_options),
         ),
