@@ -3,24 +3,32 @@
 import argparse
 import http.server
 import socketserver
+import logging
 
-def main():
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Simple HTTP server with custom port")
     parser.add_argument("--port", type=int, default=8592, help="Port number for the server (default: 8592)")
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    PORT = args.port
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=".", **kwargs)
 
-    class Handler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, directory=".", **kwargs)
+class MyTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
 
-    class MyTCPServer(socketserver.TCPServer):
-        allow_reuse_address = True
+def run_server(port: int) -> None:
+    with MyTCPServer(("127.0.0.1", port), Handler) as httpd:
+        logging.info(f"Serving at: http://localhost:{port}")
+        try:
+            httpd.serve_forever()
+        except Exception as e:
+            logging.error(f"Server error: {e}")
 
-    with MyTCPServer(("127.0.0.1", PORT), Handler) as httpd:
-        print("Serving at: http://localhost:{}".format(PORT))
-        httpd.serve_forever()
+def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    args = parse_arguments()
+    run_server(args.port)
 
 if __name__ == "__main__":
     main()
