@@ -4,10 +4,23 @@ import argparse
 import http.server
 import socketserver
 import logging
+import subprocess
+import os
+import signal
+import sys
 
-def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Simple HTTP server with custom port")
-    parser.add_argument("--port", type=int, default=8592, help="Port number for the server (default: 8592)")
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Simple HTTP server with custom port and kill option")
+    subparsers = parser.add_subparsers(dest='command')
+
+    # Subparser for the 'run' command
+    run_parser = subparsers.add_parser('port', help='Run the server')
+    run_parser.add_argument("port", type=int, default=8592, help="Port number for the server (default: 8592)")
+
+    # Subparser for the 'kill' command
+    kill_parser = subparsers.add_parser('kill', help='Kill process on a port')
+    kill_parser.add_argument("port", type=int, help="Port number of the process to kill")
+
     return parser.parse_args()
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -17,7 +30,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 class MyTCPServer(socketserver.TCPServer):
     allow_reuse_address = True
 
-def run_server(port: int) -> None:
+def find_process_id_by_port(port):
+    try:
+        result = subprocess.check_output(["lsof", "-i", f"tcp:{port}", "-t"]).decode().strip()
+        return int(result.split('\n')[0])
+    except subprocess.CalledProcessError as e:
+        logging.error(f"No process found on port {port}.")
+        return None
+
+def kill_process(pid):
+    try:
+        os.kill(pid, signal.SIGKILL)
+        logging.info(f"Process {pid} has been killed.")
+    except OSError as e:
+        logging.error(f"Error: {e}")
+
+def get_user_confirmation():
+    response = input("A process is running on the specified port. Do you want to kill it? [y/N]: ")
+    return response.lower() in ["y", "yes"]
+
+def run_server(port):
+    pid = find_process_id_by_port(port)
+    if pid and get_user_confirmation():
+        kill_process(pid)
+
     with MyTCPServer(("127.0.0.1", port), Handler) as httpd:
         logging.info(f"Serving at: http://localhost:{port}")
         try:
@@ -25,10 +61,20 @@ def run_server(port: int) -> None:
         except Exception as e:
             logging.error(f"Server error: {e}")
 
-def main() -> None:
+def handle_kill_command(port):
+    pid = find_process_id_by_port(port)
+    if pid:
+        kill_process(pid)
+
+def main():
     logging.basicConfig(level=logging.INFO)
     args = parse_arguments()
-    run_server(args.port)
+
+    # Default to 'run' if no command is specified
+    if args.command == 'kill':
+        handle_kill_command(args.port)
+    else: # Default to 'run'
+        run_server(args.port if args.command == 'port' and args.port else 8592)
 
 if __name__ == "__main__":
     main()
