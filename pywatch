@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+
+import sys
+import subprocess
+import argparse
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
+class RestartHandler(FileSystemEventHandler):
+    def __init__(self, command):
+        self.command = command
+
+    def on_any_event(self, event):
+        print(f"Change detected: {event.src_path}. Restarting server...")
+        self.restart()
+
+    def restart(self):
+        global process
+        if process:
+            process.terminate()
+        process = subprocess.Popen(self.command)
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Watch files and restart pyserve on changes")
+    parser.add_argument('command', nargs='+', help="Command to run and restart on file change")
+    return parser.parse_args()
+
+def main():
+    args = parse_arguments()
+    command = args.command
+
+    event_handler = RestartHandler(command)
+    observer = Observer()
+    observer.schedule(event_handler, path='.', recursive=True)
+    observer.start()
+
+    try:
+        global process
+        process = subprocess.Popen(command)
+        observer.join()
+    except KeyboardInterrupt:
+        observer.stop()
+    observer.join()
+
+if __name__ == '__main__':
+    main()
+
