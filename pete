@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Check if a file name is provided
+if [ "$#" -ne 1 ]; then
+    echo "Usage: pete <filename>"
+    exit 1
+fi
+
+# Paste the clipboard contents into the file
+pbpaste > "$1"
+
