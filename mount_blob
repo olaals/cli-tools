@@ -35,13 +35,20 @@ create_yaml() {
 
 # Check for the correct number of arguments
 if [ "$#" -lt 3 ]; then
-	echo "Usage: $0 <account_name> <account_key> <container1> [container2 ...]"
+	echo "Usage: $0 <account_name> <account_key_env_var> <container1> [container2 ...]"
 	exit 1
 fi
 
-# Extract storage account and key
+# Extract storage account name and environment variable for the key
 ACCOUNT_NAME="$1"
-ACCOUNT_KEY="$2"
+ACCOUNT_KEY_ENV_VAR="$2"
+ACCOUNT_KEY=$(eval echo "\$$ACCOUNT_KEY_ENV_VAR")
+
+# Validate if the environment variable is set
+if [ -z "$ACCOUNT_KEY" ]; then
+    echo "Error: Account key environment variable '$ACCOUNT_KEY_ENV_VAR' is not set."
+    exit 1
+fi
 
 # Remove first two arguments
 shift 2
