@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+
+import argparse
+import segyio
+from pathlib import Path
+
+def inspect_segy(file_path: Path) -> None:
+    try:
+        with segyio.open(file_path, "r") as segyfile:
+            # Assuming file has standard inline, crossline, and depth index
+            inlines = segyfile.ilines
+            crosslines = segyfile.xlines
+            samples = segyfile.samples
+            shape = (len(inlines), len(crosslines), len(samples))
+
+
+            print(f"Shape of the data: {shape}")
+            print(f"Min and Max Inline: {min(inlines)}, {max(inlines)}")
+            print(f"Min and Max Crossline: {min(crosslines)}, {max(crosslines)}")
+            print(f"Min and Max Sample: {min(samples)}, {max(samples)}")
+
+            print(f"First 3 Inlines: {inlines[:3]}")
+            print(f"Last 3 Inlines: {inlines[-3:]}")
+            print(f"First 3 Crosslines: {crosslines[:3]}")
+            print(f"Last 3 Crosslines: {crosslines[-3:]}")
+            print(f"First 3 Samples: {samples[:3]}")
+            print(f"Last 3 Samples: {samples[-3:]}")
+
+            print("offsets")
+            print(segyfile.offsets)
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(prog="inspect-segy", description="Inspect SEG-Y files.")
+    parser.add_argument("file_path", type=Path, help="Path to the SEG-Y file.")
+    parser.set_defaults(func=inspect_segy)
+
+    # Parse the arguments
+    args = parser.parse_args()
+
+    # Call the function
+    args.func(args.file_path)
+
