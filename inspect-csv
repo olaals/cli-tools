@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+
+import argparse
+import pandas as pd
+import numpy as np
+from pathlib import Path
+
+def list_columns(file_path: Path, sep: str) -> None:
+    try:
+        df = pd.read_csv(file_path, sep=sep)
+        print("Columns in the CSV file with types:")
+        for column, dtype in df.dtypes.items():
+            print(f"{column}: {dtype}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+def list_unique(file_path: Path, sep: str, column_name: str) -> None:
+    try:
+        df = pd.read_csv(file_path, sep=sep)
+        unique_values = df[column_name].dropna().unique()
+        print(f"Unique values in column '{column_name}':")
+        for value in unique_values:
+            print(value)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+def print_head(file_path: Path, sep: str, num_rows: int = 5) -> None:
+    try:
+        df = pd.read_csv(file_path, sep=sep)
+        print(f"First {num_rows} rows of the CSV file:")
+        print(df.head(num_rows))
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+def column_stats(file_path: Path, sep: str) -> None:
+    try:
+        df = pd.read_csv(file_path, sep=sep)
+        print("Column statistics:")
+        for column in df.columns:
+            print(f"\nColumn: {column}, Type: {df[column].dtype}")
+            if pd.api.types.is_numeric_dtype(df[column]):
+                print(f"Min: {np.nanmin(df[column])}, Max: {np.nanmax(df[column])}")
+                print(f"Mean: {np.nanmean(df[column])}")
+                print(f"NaN percentage: {np.mean(pd.isnull(df[column])) * 100:.2f}%")
+                print(f"Sorted: {np.all(df[column].sort_values(na_position='first').values == df[column].values)}")
+            else:
+                print(f"Unique values: {df[column].nunique()}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(prog="csv-inspect", description="Inspect CSV files.")
+    parser.add_argument("-s", "--sep", required=True, help="Separator used in the CSV file.")
+    subparsers = parser.add_subparsers(dest="command", help="Sub-command help")
+
+    parser_columns = subparsers.add_parser('columns', help="List columns in a CSV file with their types.")
+    parser_columns.add_argument("file_path", type=Path, help="Path to the CSV file.")
+    parser_columns.set_defaults(func=list_columns)
+
+    parser_unique = subparsers.add_parser('unique', help="List unique values within a column in a CSV file.")
+    parser_unique.add_argument("file_path", type=Path, help="Path to the CSV file.")
+    parser_unique.add_argument("column_name", type=str, help="Column name to list unique values from.")
+    parser_unique.set_defaults(func=list_unique)
+
+    parser_head = subparsers.add_parser('head', help="Print the first few rows of a CSV file.")
+    parser_head.add_argument("file_path", type=Path, help="Path to the CSV file.")
+    parser_head.add_argument("-n", "--num_rows", type=int, default=5, help="Number of rows to display. Default is 5.")
+    parser_head.set_defaults(func=print_head)
+
+    parser_stats = subparsers.add_parser('column-stats', help="Print statistics for each column in a CSV file.")
+    parser_stats.add_argument("file_path", type=Path, help="Path to the CSV file.")
+    parser_stats.set_defaults(func=column_stats)
+
+    args = parser.parse_args()
+
+    if hasattr(args, 'func'):
+        func_kwargs = {'file_path': args.file_path, 'sep': args.sep}
+        if args.command == "unique":
+            func_kwargs['column_name'] = args.column_name
+        elif args.command == "head":
+            func_kwargs['num_rows'] = args.num_rows
+
+        args.func(**func_kwargs)
+    else:
+        parser.print_help()
