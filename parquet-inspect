@@ -1,75 +1,92 @@
 #!/usr/bin/env python3
 
-import argparse
 import pandas as pd
 from pathlib import Path
+import typer
+from typing import List
 
-def list_columns(file_path: Path) -> None:
+app = typer.Typer()
+
+@app.command()
+def columns(file_path: Path) -> None:
+    """
+    List columns in a Parquet file with their types.
+    """
     try:
         df = pd.read_parquet(file_path)
-        print("Columns in the Parquet file with types:")
+        typer.echo("Columns in the Parquet file with types:")
         for column, dtype in df.dtypes.items():
-            print(f"{column}: {dtype}")
+            typer.echo(f"{column}: {dtype}")
     except Exception as e:
-        print(f"An error occurred: {e}")
+        typer.echo(f"An error occurred: {e}")
 
-def list_unique(file_path: Path, column_name: str) -> None:
+@app.command()
+def unique(file_path: Path, column_name: str) -> None:
+    """
+    List unique values within a column in a Parquet file.
+    """
     try:
         df = pd.read_parquet(file_path)
         unique_values = df[column_name].dropna().unique()
-        print(f"Unique values in column '{column_name}':")
+        typer.echo(f"Unique values in column '{column_name}':")
         for value in unique_values:
-            print(value)
+            typer.echo(value)
     except Exception as e:
-        print(f"An error occurred: {e}")
+        typer.echo(f"An error occurred: {e}")
 
-def print_head(file_path: Path, num_rows: int = 5) -> None:
+@app.command()
+def head(file_path: Path, num_rows: int = typer.Option(5, help="Number of rows to display. Default is 5")) -> None:
     """
-    Print the first few rows of the Parquet file.
-
-    Args:
-    file_path (Path): Path to the Parquet file.
-    num_rows (int): Number of rows to display.
+    Print the first few rows of a Parquet file.
     """
-    print(f"First {num_rows} rows of the Parquet file:")
+    typer.echo(f"First {num_rows} rows of the Parquet file:")
     try:
         df = pd.read_parquet(file_path)
-        print(df.head(num_rows))
+        typer.echo(df.head(num_rows))
     except Exception as e:
-        print(f"An error occurred: {e}")
+        typer.echo(f"An error occurred: {e}")
+
+@app.command()
+def memory_usage(file_path: Path) -> None:
+    """
+    Print the memory usage of each column in the DataFrame in megabytes,
+    along with the total memory usage.
+    """
+    try:
+        df = pd.read_parquet(file_path)
+        memory_usage_bytes = df.memory_usage(deep=True)
+        typer.echo("Memory usage by columns (in MB):")
+        total_memory_usage_bytes = 0
+        for column, bytes_used in memory_usage_bytes.items():
+            mb_used = bytes_used / 1e6
+            typer.echo(f"{column}: {mb_used:.2f} MB")
+            total_memory_usage_bytes += bytes_used
+        total_memory_usage_mb = total_memory_usage_bytes / 1e6
+        typer.echo(f"Total memory usage: {total_memory_usage_mb:.2f} MB")
+    except Exception as e:
+        typer.echo(f"An error occurred: {e}")
+
+
+@app.command()
+def filter(file_path: Path, column_value_pairs: List[str] = typer.Argument(...)) -> None:
+    """
+    Print rows based on specified column-value filters of a Parquet file.
+    """
+    try:
+        if len(column_value_pairs) % 2 != 0:
+            raise ValueError("Please provide an even number of arguments, specifying columns and their corresponding values.")
+        
+        df = pd.read_parquet(file_path)
+        query_string = " & ".join([f"`{column_value_pairs[i]}` == '{column_value_pairs[i + 1]}'" for i in range(0, len(column_value_pairs), 2)])
+        filtered_df = df.query(query_string)
+        
+        if filtered_df.empty:
+            typer.echo("No rows match the specified filters.")
+        else:
+            typer.echo(filtered_df)
+    except Exception as e:
+        typer.echo(f"An error occurred: {e}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog="parquet-inspect", description="Inspect Parquet files.")
-    subparsers = parser.add_subparsers(dest="command", help="Sub-command help")
-
-    # Sub-parser for the 'columns' command
-    parser_columns = subparsers.add_parser('columns', help="List columns in a Parquet file with their types.")
-    parser_columns.add_argument("file_path", type=Path, help="Path to the Parquet file.")
-    parser_columns.set_defaults(func=list_columns)
-
-    # Sub-parser for the 'unique' command
-    parser_unique = subparsers.add_parser('unique', help="List unique values within a column in a Parquet file.")
-    parser_unique.add_argument("file_path", type=Path, help="Path to the Parquet file.")
-    parser_unique.add_argument("column_name", type=str, help="Column name to list unique values from.")
-    parser_unique.set_defaults(func=list_unique)
-
-    parser_head = subparsers.add_parser('head', help="Print the first few rows of a Parquet file.")
-    parser_head.add_argument("file_path", type=Path, help="Path to the Parquet file.")
-    parser_head.add_argument("-n", "--num_rows", type=int, default=5, help="Number of rows to display. Default is 5.")
-    parser_head.set_defaults(func=print_head)
-
-    # Parse the arguments
-    args = parser.parse_args()
-
-    # Call the default function based on the sub-command
-    if hasattr(args, 'func'):
-        if args.command == "columns":
-            args.func(args.file_path)
-        elif args.command == "unique":
-            args.func(args.file_path, args.column_name)
-        elif args.command == "head":
-            args.func(args.file_path, args.num_rows)
-    else:
-        parser.print_help()
-
+    app()
