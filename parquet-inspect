@@ -67,23 +67,86 @@ def memory_usage(file_path: Path) -> None:
         typer.echo(f"An error occurred: {e}")
 
 
+
 @app.command()
 def filter(file_path: Path, column_value_pairs: List[str] = typer.Argument(...)) -> None:
     """
-    Print rows based on specified column-value filters of a Parquet file.
+    Print rows based on specified column-value filters of a Parquet file, with type casting.
     """
     try:
         if len(column_value_pairs) % 2 != 0:
             raise ValueError("Please provide an even number of arguments, specifying columns and their corresponding values.")
         
         df = pd.read_parquet(file_path)
-        query_string = " & ".join([f"`{column_value_pairs[i]}` == '{column_value_pairs[i + 1]}'" for i in range(0, len(column_value_pairs), 2)])
+        query_conditions = []
+        for i in range(0, len(column_value_pairs), 2):
+            column_name = column_value_pairs[i]
+            value = column_value_pairs[i + 1]
+            column_dtype = df[column_name].dtype
+
+            # Cast value to column data type
+            if pd.api.types.is_integer_dtype(column_dtype):
+                casted_value = int(value)
+            elif pd.api.types.is_float_dtype(column_dtype):
+                casted_value = float(value)
+            elif pd.api.types.is_string_dtype(column_dtype):
+                casted_value = f"'{value}'"
+            else:
+                # Add more data type checks as needed
+                casted_value = value
+            
+            query_conditions.append(f"`{column_name}` == {casted_value}")
+        
+        query_string = " & ".join(query_conditions)
         filtered_df = df.query(query_string)
         
         if filtered_df.empty:
             typer.echo("No rows match the specified filters.")
         else:
             typer.echo(filtered_df)
+    except Exception as e:
+        typer.echo(f"An error occurred: {e}")
+
+
+@app.command()
+def compare(file_path1: Path, file_path2: Path, index_columns: List[str], index_values: List[str], compare_columns: List[str]) -> None:
+    """
+    Compare specified columns between two Parquet files based on index columns and values.
+    """
+    try:
+        # Load the dataframes
+        df1 = pd.read_parquet(file_path1)
+        df2 = pd.read_parquet(file_path2)
+
+        # Filter based on index columns and values
+        query = " & ".join([f"`{index_columns[i]}` == '{index_values[i]}'" for i in range(len(index_columns))])
+        df1_filtered = df1.query(query)
+        df2_filtered = df2.query(query)
+
+        # Sort the filtered dataframes on index columns
+        df1_sorted = df1_filtered.sort_values(by=index_columns)
+        df2_sorted = df2_filtered.sort_values(by=index_columns)
+
+        # Select the compare columns
+        df1_compare = df1_sorted[compare_columns]
+        df2_compare = df2_sorted[compare_columns]
+
+        # Compare the selected columns row-wise
+        differences = df1_compare.compare(df2_compare)
+        num_rows_different = differences.shape[0] / 2  # Because compare() doubles the number of rows for mismatches
+
+        # Report statistics
+        if num_rows_different > 0:
+            typer.echo(f"Number of rows different: {num_rows_different}")
+            # If numeric, calculate difference magnitude
+            for column in compare_columns:
+                if pd.api.types.is_numeric_dtype(df1_compare[column]):
+                    diff_sum = (df1_compare[column] - df2_compare[column]).abs().sum()
+                    typer.echo(f"Total difference in '{column}': {diff_sum}")
+                else:
+                    typer.echo(f"Cannot calculate difference magnitude for non-numeric column '{column}'.")
+        else:
+            typer.echo("No differences found in the compared columns.")
     except Exception as e:
         typer.echo(f"An error occurred: {e}")
 

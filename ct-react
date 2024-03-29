@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+
+import os
+from typing import Optional
+import typer
+
+app = typer.Typer()
+
+@app.command()
+def main(component_name: str = typer.Argument(..., help="The name of the React component")):
+    directory_path = component_name
+    try:
+        os.makedirs(directory_path, exist_ok=True)
+        tsx_file_content = (
+            f"import React from 'react';\n\n"
+            f"const {component_name} = () => (\n"
+            f"    <div>\n"
+            f"        {'{'}/* TODO: Implement {component_name} component */{'}'}\n"
+            f"    </div>\n"
+            f");\n\n"
+            f"export default {component_name};\n"
+        )
+        index_tsx_content = (
+            f"export {{ default }} from './{component_name}';\n"
+        )
+        with open(f"{directory_path}/{component_name}.tsx", "w") as tsx_file:
+            tsx_file.write(tsx_file_content)
+        with open(f"{directory_path}/index.tsx", "w") as index_file:
+            index_file.write(index_tsx_content)
+        typer.echo(f"Component {component_name} created successfully.")
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+
+if __name__ == "__main__":
+    app()
+
