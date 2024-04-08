@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# SEGYImportDir: A script to bulk import SEG-Y files using SEGYImport from OpenVDS, outputting VDS files to a specified directory.
+
+# Usage check
+if [ "$#" -lt 3 ]; then
+  echo "Usage: $0 [SEGYImport Args] --vdsdir <path-to-output-vds-dir> <path-to-input-segy-dir>"
+  exit 1
+fi
+
+# Parse command line arguments
+VDS_DIR=""
+SEGY_DIR=""
+ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --vdsdir)
+      VDS_DIR="$2"
+      shift # past argument
+      shift # past value
+      ;;
+    *)
+      if [ -z "$SEGY_DIR" ]; then
+        SEGY_DIR="$1"
+      else
+        ARGS+=("$1")
+      fi
+      shift # past argument
+      ;;
+  esac
+done
+
+# Validate directories
+if [ ! -d "$SEGY_DIR" ]; then
+  echo "SEG-Y directory does not exist: $SEGY_DIR"
+  exit 1
+fi
+
+if [ ! -d "$VDS_DIR" ]; then
+  echo "VDS output directory does not exist, creating: $VDS_DIR"
+  mkdir -p "$VDS_DIR"
+fi
+
+# Main loop to process each SEG-Y file
+for SEGY_FILE in "$SEGY_DIR"/*.segy; do
+  FILENAME=$(basename -- "$SEGY_FILE")
+  BASENAME="${FILENAME%.segy}"
+  VDS_FILE="$VDS_DIR/$BASENAME.vds"
+  
+  # Construct and execute the SEGYImport command
+  CMD="SEGYImport ${ARGS[*]} --vdsfile \"$VDS_FILE\" \"$SEGY_FILE\""
+  echo "Executing: $CMD"
+  eval $CMD
+  
+  if [ $? -ne 0 ]; then
+    echo "Failed to import $SEGY_FILE"
+    continue
+  fi
+done
+
+echo "SEGY import completed."
+
