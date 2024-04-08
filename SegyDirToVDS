@@ -1,0 +1,476 @@
+#!/usr/bin/env python3
+
+import os
+from pathlib import Path
+from enum import Enum
+from typing import Tuple, List
+import time
+
+from dataclasses import dataclass
+import numpy.typing as npt
+import numpy as np
+from numpy.typing import NDArray
+from tqdm import tqdm
+
+import segyio  # type: ignore
+from segyio import TraceSortingFormat
+
+from openvds import VolumeDataLayoutDescriptor as VDLayoutDesc  # type: ignore
+from openvds import VolumeDataChannelDescriptor as VDChannelDesc  # type: ignore
+from openvds import VolumeDataAxisDescriptor as VDAxisDesc  # type: ignore
+import openvds  # type: ignore
+from openvds import (
+    CompressionMethod,  # type: ignore
+    MetadataContainer,  # type: ignore
+    KnownUnitNames,  # type: ignore
+    getAccessManager,
+    DimensionsND,  # type: ignore
+    IVolumeDataAccessManager,  # type: ignore
+)
+
+from typing import List, Optional
+import typer
+
+
+class SeismicAxisName(Enum):
+    INLINE = 0
+    XLINE = 1
+    SAMPLE = 2
+
+    @staticmethod
+    def to_string(seismic_axis_enum: "SeismicAxisName") -> str:
+        map = {"0": "Inline", "1": "Xline", "2": "Sample"}
+        return map[str(seismic_axis_enum.value)]
+
+    @staticmethod
+    def from_string(seismic_axis_str) -> "SeismicAxisName":
+        map = {
+            "Inline": SeismicAxisName.INLINE,
+            "Xline": SeismicAxisName.XLINE,
+            "Sample": SeismicAxisName.SAMPLE,
+        }
+        return map[seismic_axis_str]
+
+
+@dataclass
+class SeismicAxis:
+    min_val: int
+    max_val: int
+    step: int
+
+    @staticmethod
+    def from_num_total(min_val: int, max_val: int, num_total: int):
+        step = (max_val - min_val) / (num_total - 1)
+        step = int(step)
+        return SeismicAxis(min_val, max_val, step)
+
+    @staticmethod
+    def from_array(arr: npt.NDArray[np.int32]) -> "SeismicAxis":
+        print(arr)
+        return SeismicAxis(
+            min_val=int(np.min(arr)),
+            max_val=int(np.max(arr)),
+            step=int(arr[1] - arr[0]),
+        )
+
+    def as_array(self) -> npt.NDArray[np.int32]:
+        """Generate a NumPy array from the axis range and step."""
+
+        return np.array(
+            np.arange(self.min_val, self.max_val + self.step, self.step, dtype=np.int32)
+        )
+
+    def get_index(self, val: int) -> int:
+        """Gets the index of a value as if it was the index in the list from the as_array method."""
+        if val < self.min_val or val > self.max_val:
+            raise ValueError(
+                f"Value {val} is out of the axis range {self.min_val} -> {self.max_val}."
+            )
+        return (val - self.min_val) // self.step
+
+    def __len__(self) -> int:
+        """Return the number of steps between min_val and max_val."""
+        return (self.max_val - self.min_val) // self.step + 1
+
+    def __str__(self) -> str:
+        """Provide a nice string representation of the SeismicAxis object."""
+        length = len(self)
+        return f"SeismicAxis(min_val={self.min_val}, max_val={self.max_val}, step={self.step}, length={length})"
+
+
+@dataclass
+class CubeInfo:
+    inline_axis: SeismicAxis
+    xline_axis: SeismicAxis
+    sample_axis: SeismicAxis
+
+
+@dataclass
+class SeismicCube:
+    data: npt.NDArray[np.float32]
+    iline_axis: SeismicAxis
+    xline_axis: SeismicAxis
+    sample_axis: SeismicAxis
+
+    def __post_init__(self) -> None:
+        axes_shape = (len(self.iline_axis), len(self.xline_axis), len(self.sample_axis))
+        self.data = self.data.astype(np.float32)
+        is_correct_shape = self.data.shape == axes_shape
+
+        # if not is_correct_shape:
+        # raise ValueError(f"Data has shape {self.data.shape}, but axes has shape {axes_shape}")
+
+    def __str__(self):
+        return f"SeismicCube(\ndata.shape={self.data.shape}\n{self.iline_axis}\n{self.xline_axis}\n{self.sample_axis}\n)"
+
+    @staticmethod
+    def get_example_cube(shape):
+        assert len(shape) == 3
+        zeros = np.zeros(shape, dtype=np.float32)
+
+        zeros[:10, :10, :] = 1.0
+        zeros[:10, -10:, :] = 2.0
+        zeros[-10:, :10, :] = 3.0
+        zeros[-10:, -10:, :] = 4.0
+        return SeismicCube(
+            zeros,
+            iline_axis=SeismicAxis(1, shape[0], 1),
+            xline_axis=SeismicAxis(1, shape[1], 1),
+            sample_axis=SeismicAxis(1, shape[2], 1),
+        )
+
+
+
+
+class CompressionOVDS(Enum):
+    NONE = 0
+    WAVELET = 1
+    RLE = 2
+    ZIP = 3
+    WAVELET_NORMALIZE_BLOCK = 4
+    WAVELET_LOSSLESS = 5
+    WAVELET_NORMALIZE_BLOCK_LOSSLESS = 6
+
+
+@dataclass
+class VDSSettings:
+    compression: CompressionOVDS = CompressionOVDS.NONE
+    margin: Tuple[int, int] = (4, 4)
+    volume_data_format: VDChannelDesc.Format = VDChannelDesc.Format.Format_R32
+    brick_size: VDLayoutDesc.BrickSize = VDLayoutDesc.BrickSize.BrickSize_128
+    level_of_detail: VDLayoutDesc.LODLevels = VDLayoutDesc.LODLevels.LODLevels_None
+    layout_desc_option: VDLayoutDesc.Options = VDLayoutDesc.Options.Options_Create2DLODs
+    channel: int = 0
+    max_pages: int = 8
+    brick_size_2d_multiplier: int = 4
+
+    @property
+    def layout_descriptor(self) -> VDLayoutDesc:
+        return VDLayoutDesc(
+            self.brick_size,
+            self.margin[0],
+            self.margin[1],
+            self.brick_size_2d_multiplier,
+            self.level_of_detail,
+            self.layout_desc_option,
+        )
+
+    @property
+    def compression_method(self) -> CompressionMethod:
+        return CompressionMethod(self.compression.value)
+
+
+@dataclass
+class AzureStorageConfig:
+    account_name: str = ""
+    container_name: str = ""
+    storage_key: str = ""
+
+    @property
+    def is_local(self) -> bool:
+        return self.account_name == ""
+
+
+def get_vds_connection_string(
+    is_local: bool, account_name: str = "", account_key: str = ""
+) -> str:
+    conn_string = ""
+    if is_local:
+        conn_string = ""
+    else:
+        conn_string = get_azure_connection_string(
+            account_name=account_name, account_key=account_key
+        )
+    return conn_string
+
+
+def get_azure_connection_string(account_name: str, account_key: str) -> str:
+    conn_str = (
+        "DefaultEndpointsProtocol=https;"
+        + f"AccountName={account_name};"
+        + f"AccountKey={account_key};"
+        + "EndpointSuffix=core.windows.net"
+    )
+    return conn_str
+
+
+def get_azure_url_vds_format(container_name: str, vds_path: str) -> str:
+    return f"azure://{container_name}/{vds_path}"
+
+
+def get_vds_url(is_local: bool, container_name: str = "", vds_path: str = "") -> str:
+    if is_local:
+        return vds_path
+    else:
+        return get_azure_url_vds_format(
+            container_name=container_name, vds_path=vds_path
+        )
+
+
+def vds_axis_descriptor_to_array(
+    layout: VDLayoutDesc, axis: int, lod_level: int = 0
+) -> NDArray[np.int32]:
+    axis_desc = layout.getAxisDescriptor(axis)
+    min = int(axis_desc.coordinateMin)
+    max = int(axis_desc.coordinateMax)
+    num = int(np.ceil(axis_desc.getNumSamples() / 2**lod_level))
+    return np.linspace(min, max, num, dtype=np.int32)
+
+
+def get_vds_axis_min_max_samples(layout: VDLayoutDesc, axis: int):
+    axis_desc = layout.getAxisDescriptor(axis)
+    min = int(axis_desc.coordinateMin)
+    max = int(axis_desc.coordinateMax)
+    num = axis_desc.getNumSamples()
+    return min, max, num
+
+
+def read_segy_as_cube(segy_path: Path) -> SeismicCube:
+    """Read segy file as SeismicCube."""
+    if not os.path.isfile(segy_path):
+        raise FileNotFoundError(f"File {segy_path} not found.")
+
+    with segyio.open(segy_path, "r") as fsegy:
+        ilines = fsegy.ilines
+        xlines = fsegy.xlines
+        samples = fsegy.samples
+        sorting = fsegy.sorting
+
+    if sorting not in [
+        TraceSortingFormat.INLINE_SORTING,
+        TraceSortingFormat.CROSSLINE_SORTING,
+    ]:
+        raise ValueError(
+            f"sorting {sorting} is not supported. \
+            Only INLINE_SORTING and CROSSLINE_SORTING is supported."
+        )
+
+    if ilines is None or xlines is None or samples is None:
+        raise ValueError("ilines, xlines, samples must contain values")
+
+    data = segyio.tools.cube(segy_path)
+
+    if sorting == TraceSortingFormat.CROSSLINE_SORTING:
+        data = np.transpose(data, (1, 0, 2))
+
+    assert data.shape == (len(ilines), len(xlines), len(samples))
+
+    return SeismicCube(
+        data=data,
+        iline_axis=SeismicAxis.from_array(ilines),
+        xline_axis=SeismicAxis.from_array(xlines),
+        sample_axis=SeismicAxis.from_array(samples),
+    )
+
+
+
+
+def write_cube(
+    path: Path,
+    seismic_cube: SeismicCube,
+    axis_names: List[str] = ["INLINE", "XLINE", "SAMPLE"],
+    axis_units: List[str] = ["IL", "XL", "MS"],
+    vds_settings: VDSSettings = VDSSettings(),
+    storage_cfg: AzureStorageConfig = AzureStorageConfig(),
+) -> None:
+    print(seismic_cube)
+    vds_url = get_vds_url(storage_cfg.is_local, storage_cfg.container_name, str(path))
+    connection_string = get_vds_connection_string(
+        storage_cfg.is_local, storage_cfg.account_name, storage_cfg.storage_key
+    )
+
+    print("In write cube, vds_url", vds_url)
+    print("In write cube, connection_string", connection_string)
+
+    layout_descriptor = vds_settings.layout_descriptor
+    compression_method = vds_settings.compression_method
+    metadata = MetadataContainer()
+    axis_descriptors = [
+        VDAxisDesc(
+            len(seismic_cube.iline_axis),
+            axis_names[0],
+            axis_units[0],
+            seismic_cube.iline_axis.min_val,
+            seismic_cube.iline_axis.max_val,
+        ),
+        VDAxisDesc(
+            len(seismic_cube.xline_axis),
+            axis_names[1],
+            axis_units[1],
+            seismic_cube.xline_axis.min_val,
+            seismic_cube.xline_axis.max_val,
+        ),
+        VDAxisDesc(
+            len(seismic_cube.sample_axis),
+            axis_names[2],
+            axis_units[2],
+            seismic_cube.sample_axis.min_val,
+            seismic_cube.sample_axis.max_val,
+        ),
+    ]
+
+    min_val = np.min(seismic_cube.data)
+    max_val = np.max(seismic_cube.data)
+    channel_descriptors = [
+        VDChannelDesc(
+            vds_settings.volume_data_format,
+            VDChannelDesc.Components.Components_1,
+            "Value",
+            KnownUnitNames.metersPerSecond(),
+            min_val,
+            max_val,
+        )
+    ]
+
+    vds_handler = openvds.create(  # type: ignore
+        vds_url,
+        connection_string,
+        layout_descriptor,
+        axis_descriptors,
+        channel_descriptors,
+        metadata,
+        compression_method,
+        0.0,
+    )
+
+    manager = getAccessManager(vds_handler)
+
+    LOD_AccessModeCreate = 0
+
+    data_t = seismic_cube.data.transpose()
+
+    accessor = manager.createVolumeDataPageAccessor(
+        DimensionsND.Dimensions_012,
+        LOD_AccessModeCreate,
+        vds_settings.channel,
+        vds_settings.max_pages,
+        IVolumeDataAccessManager.AccessMode.AccessMode_Create,
+    )
+    for c in tqdm(range(accessor.getChunkCount()), desc="Processing chunks"):
+        page = accessor.createPage(c)
+        buf = np.array(page.getWritableBuffer(), copy=False)
+        (min, max) = page.getMinMax()
+        buf[:, :, :] = data_t[min[2] : max[2], min[1] : max[1], min[0] : max[0]]
+        page.release()
+
+    accessor.commit()
+    openvds.close(vds_handler)  # type: ignore
+
+
+
+def segy_cube_to_vds(segy_path: Path, vds_path: Path, vds_settings: VDSSettings):
+    seismic_cube = read_segy_as_cube(segy_path)
+    write_cube(vds_path, seismic_cube, vds_settings=vds_settings)
+
+lod_map = {
+    0: VDLayoutDesc.LODLevels.LODLevels_None,
+    1: VDLayoutDesc.LODLevels.LODLevels_1,
+    2: VDLayoutDesc.LODLevels.LODLevels_2
+}
+
+bricksize_map = {
+    64: VDLayoutDesc.BrickSize.BrickSize_64,
+    128: VDLayoutDesc.BrickSize.BrickSize_128
+}
+
+compression_method_map ={
+    "None": CompressionOVDS.NONE,
+    "Wavelet": CompressionOVDS.WAVELET
+}
+
+
+app = typer.Typer()
+
+def validate_compression_method(compression_method: str) -> str:
+    valid_methods = [
+        'None', 'Wavelet', 'RLE', 'Zip', 'WaveletNormalizeBlock',
+        'WaveletLossless', 'WaveletNormalizeBlockLossless'
+    ]
+    if compression_method not in valid_methods:
+        raise typer.BadParameter(f"Invalid compression method: {compression_method}. Must be one of: {', '.join(valid_methods)}")
+    else:
+        return compression_method
+
+
+
+@app.command()
+def segy_import_dir(
+    segy_dir: str = typer.Argument(..., help="Path to input SEG-Y directory"),
+    vdsdir: str = typer.Argument(..., help="Path to output VDS directory"),
+    compression_method: str = typer.Argument(..., help="Compression method.", callback=validate_compression_method),
+    lod_levels: int = typer.Option(0, "--lod-levels", help="The number of LODs to generate."),
+    brick_size: int = typer.Option(64, "--brick-size", help="The brick size for the volume data store."),
+    margin: int = typer.Option(4, "--margin", help="The margin size (overlap) of the bricks.")
+):
+    print("Compression method", compression_method)
+    print("Brick size", brick_size)
+    print("Margin", margin)
+    print("Lod levels", lod_levels)
+    """
+    Bulk imports SEG-Y files using SEGYImport, outputting VDS files to the specified directory.
+    """
+    if not os.path.isdir(segy_dir):
+        typer.echo(f"SEG-Y directory does not exist: {segy_dir}")
+        raise typer.Exit(code=1)
+
+    if not os.path.isdir(vdsdir):
+        typer.echo(f"VDS output directory does not exist, creating: {vdsdir}")
+        os.makedirs(vdsdir, exist_ok=True)
+
+    segy_files = [f for f in os.listdir(segy_dir) if f.endswith('.segy')]
+    total_files = len(segy_files)
+
+    if total_files == 0:
+        typer.echo("No SEG-Y files found in the input directory.")
+        raise typer.Exit()
+
+    start_time = time.time()
+
+    for i, filename in enumerate(segy_files, start=1):
+        basename = os.path.splitext(filename)[0]
+        vds_file = Path(os.path.join(vdsdir, f"{basename}.vds"))
+        segy_file = Path(os.path.join(segy_dir, filename))
+
+        lod_setting = lod_map[lod_levels]
+        brick_size_setting = bricksize_map[brick_size]
+        compression_method_setting = compression_method_map[compression_method]
+
+        vds_settings = VDSSettings(
+            level_of_detail=lod_setting,
+            brick_size=brick_size_setting,
+            margin=(margin, margin),
+            compression=compression_method_setting
+        )
+
+        segy_cube_to_vds(segy_file, vds_file, vds_settings)
+
+        elapsed_time = time.time() - start_time
+        remaining_time = (elapsed_time / i) * (total_files - i)
+        percent_complete = (i / total_files) * 100
+        typer.echo(f"Completed: {percent_complete:.2f}% - Estimated Time Remaining: {remaining_time:.2f} seconds")
+
+    typer.echo("SEGY import completed.")
+
+if __name__ == "__main__":
+    app()
+
