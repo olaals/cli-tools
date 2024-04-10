@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+
+import ast
+import typer
+import pyperclip
+from astunparse import unparse
+
+app = typer.Typer()
+
+class FunctionReplacer(ast.NodeTransformer):
+    def __init__(self, func_name: str, new_func_code: str):
+        self.func_name = func_name
+        self.new_func_code = ast.parse(new_func_code).body[0]  # Assume new_func_code is a single function
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
+        if node.name == self.func_name:
+            return self.new_func_code
+        return node
+
+@app.command()
+def replace_function(filename: str):
+    # Load the function from the clipboard
+    clipboard_content = pyperclip.paste()
+    try:
+        new_func_ast = ast.parse(clipboard_content)
+    except SyntaxError:
+        typer.echo("Clipboard content is not valid Python code.")
+        raise typer.Exit(code=1)
+
+    if not new_func_ast.body or not isinstance(new_func_ast.body[0], ast.FunctionDef):
+        typer.echo("No valid function definition found in clipboard.")
+        raise typer.Exit(code=1)
+
+    func_name = new_func_ast.body[0].name
+
+    # Read the original file
+    with open(filename, 'r') as f:
+        original_code = f.read()
+
+    try:
+        original_ast = ast.parse(original_code)
+    except SyntaxError as e:
+        typer.echo(f"Failed to parse {filename}: {e}")
+        raise typer.Exit(code=1)
+
+    # Replace the function
+    replacer = FunctionReplacer(func_name, clipboard_content)
+    new_ast = replacer.visit(original_ast)
+
+    # Write the updated code back to the file
+    with open(filename, 'w') as f:
+        f.write(unparse(new_ast))
+
+    typer.echo(f"Function {func_name} replaced in {filename}.")
+
+if __name__ == "__main__":
+    app()
