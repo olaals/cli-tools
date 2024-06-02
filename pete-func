@@ -1,57 +1,72 @@
 #!/usr/bin/env python3
 
-import ast
+import libcst as cst
 import typer
 import pyperclip
-from astunparse import unparse
+from typing import Optional
 
 app = typer.Typer()
 
-class FunctionReplacer(ast.NodeTransformer):
-    def __init__(self, func_name: str, new_func_code: str):
-        self.func_name = func_name
-        self.new_func_code = ast.parse(new_func_code).body[0]  # Assume new_func_code is a single function
+def read_from_clipboard() -> Optional[str]:
+    try:
+        return pyperclip.paste()
+    except Exception as e:
+        typer.echo(f"Failed to read from clipboard: {e}")
+        return None
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
-        if node.name == self.func_name:
-            return self.new_func_code
-        return node
+def read_file(filename: str) -> Optional[str]:
+    try:
+        with open(filename, 'r') as f:
+            return f.read()
+    except Exception as e:
+        typer.echo(f"Failed to read file {filename}: {e}")
+        return None
+
+def write_to_file(filename: str, content: str) -> None:
+    try:
+        with open(filename, 'w') as f:
+            f.write(content)
+    except Exception as e:
+        typer.echo(f"Failed to write to file {filename}: {e}")
+
+class FunctionReplacer(cst.CSTTransformer):
+    def __init__(self, target_function_name: str, new_function_code: cst.FunctionDef):
+        self.target_function_name = target_function_name
+        self.new_function_code = new_function_code
+
+    def leave_FunctionDef(self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef) -> cst.CSTNode:
+        if original_node.name.value == self.target_function_name:
+            return self.new_function_code
+        return updated_node
+
+def replace_function_in_code(code: str, func_name: str, new_func_code: str) -> str:
+    tree = cst.parse_module(code)
+    new_func_ast = cst.parse_statement(new_func_code)
+    if not isinstance(new_func_ast, cst.FunctionDef):
+        typer.echo("New function code is not a valid function definition.")
+        raise typer.Exit(code=1)
+
+    transformer = FunctionReplacer(func_name, new_func_ast)
+    new_tree = tree.visit(transformer)
+    return new_tree.code
 
 @app.command()
-def replace_function(filename: str):
-    # Load the function from the clipboard
-    clipboard_content = pyperclip.paste()
-    try:
-        new_func_ast = ast.parse(clipboard_content)
-    except SyntaxError:
-        typer.echo("Clipboard content is not valid Python code.")
+def replace_function(filename: str) -> None:
+    clipboard_content = read_from_clipboard()
+    if clipboard_content is None:
         raise typer.Exit(code=1)
 
-    if not new_func_ast.body or not isinstance(new_func_ast.body[0], ast.FunctionDef):
-        typer.echo("No valid function definition found in clipboard.")
+    original_code = read_file(filename)
+    if original_code is None:
         raise typer.Exit(code=1)
-
-    func_name = new_func_ast.body[0].name
-
-    # Read the original file
-    with open(filename, 'r') as f:
-        original_code = f.read()
 
     try:
-        original_ast = ast.parse(original_code)
-    except SyntaxError as e:
-        typer.echo(f"Failed to parse {filename}: {e}")
+        new_code = replace_function_in_code(original_code, cst.parse_statement(clipboard_content).name.value, clipboard_content)
+        write_to_file(filename, new_code)
+        typer.echo(f"Function replaced in {filename}.")
+    except Exception as e:
+        typer.echo(f"Error replacing function: {e}")
         raise typer.Exit(code=1)
-
-    # Replace the function
-    replacer = FunctionReplacer(func_name, clipboard_content)
-    new_ast = replacer.visit(original_ast)
-
-    # Write the updated code back to the file
-    with open(filename, 'w') as f:
-        f.write(unparse(new_ast))
-
-    typer.echo(f"Function {func_name} replaced in {filename}.")
 
 if __name__ == "__main__":
     app()
