@@ -43,7 +43,7 @@ def file_change_callback(file_path: str):
         send_sse_update(html_content)
 
 
-def run_md_server(directory=None, port=8000):
+def run_md_server(directory=None, port=9856):
 
     if directory is None:
         directory = os.getcwd()
@@ -65,7 +65,7 @@ def run_md_server(directory=None, port=8000):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="File Server CLI")
-    parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
+    parser.add_argument("--port", type=int, default=9586, help="Port to run the server on")
     parser.add_argument("--dir", default=os.getcwd(), help="Directory to serve")
     args = parser.parse_args()
     run_md_server()
