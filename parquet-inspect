@@ -170,5 +170,44 @@ def schema(file_path: Path) -> None:
     file = pq.ParquetFile(file_path)
     print(file.schema)
 
+@app.command()
+def compare_overlap_in_columns(file_path1: Path, file_path2: Path, column_name: str) -> None:
+    """
+    Compare the overlap of values in a specified column between two Parquet files,
+    and print the percentages of overlap relative to the total number of unique positions (union).
+    """
+    try:
+        df1 = pd.read_parquet(file_path1)
+        df2 = pd.read_parquet(file_path2)
+        print(f"len(df1): {len(df1)}")
+        print(f"len(df2): {len(df2)}")
+        print("")
+
+        if column_name not in df1.columns or column_name not in df2.columns:
+            raise ValueError(f"The column '{column_name}' does not exist in one or both files.")
+
+        set1 = set(df1[column_name].dropna().unique())
+        set2 = set(df2[column_name].dropna().unique())
+
+        intersection = set1 & set2
+        only_in_file1 = set1 - set2
+        only_in_file2 = set2 - set1
+
+        total_union = len(set1 | set2)
+
+        percent_in_both = (len(intersection) / total_union * 100) if total_union > 0 else 0
+        percent_only_in_file1 = (len(only_in_file1) / total_union * 100) if total_union > 0 else 0
+        percent_only_in_file2 = (len(only_in_file2) / total_union * 100) if total_union > 0 else 0
+
+        typer.echo(
+            f"Comparison for column '{column_name}': \n "
+            f"in_both={len(intersection)} ({percent_in_both:.2f}%), \n "
+            f"only_in_file1={len(only_in_file1)} ({percent_only_in_file1:.2f}%), \n "
+            f"only_in_file2={len(only_in_file2)} ({percent_only_in_file2:.2f}%) \n"
+        )
+
+    except Exception as e:
+        typer.echo(f"An error occurred: {e}")
+
 if __name__ == "__main__":
     app()
