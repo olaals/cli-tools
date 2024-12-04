@@ -150,6 +150,25 @@ def compare(file_path1: Path, file_path2: Path, index_columns: List[str], index_
     except Exception as e:
         typer.echo(f"An error occurred: {e}")
 
+@app.command()
+def row_count(file_path: Path) -> None:
+    """
+    Print the number of rows in a Parquet file.
+    """
+    try:
+        df = pd.read_parquet(file_path)
+        typer.echo(f"The Parquet file has {len(df)} rows.")
+    except Exception as e:
+        typer.echo(f"An error occurred: {e}")
+
+@app.command()
+def schema(file_path: Path) -> None:
+    import pyarrow.parquet as pq
+    """
+    Print the schema of a Parquet file.
+    """
+    file = pq.ParquetFile(file_path)
+    print(file.schema)
 
 if __name__ == "__main__":
     app()
