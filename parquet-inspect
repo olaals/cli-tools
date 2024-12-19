@@ -209,5 +209,38 @@ def compare_overlap_in_columns(file_path1: Path, file_path2: Path, column_name: 
     except Exception as e:
         typer.echo(f"An error occurred: {e}")
 
+@app.command()
+def in_memory_size(file_path: Path) -> None:
+    """
+    Print the approximate size of the Parquet file in memory after loading into a DataFrame.
+    """
+    try:
+        # Load the Parquet file into a DataFrame
+        df = pd.read_parquet(file_path)
+        
+        # Calculate total memory usage in bytes
+        total_memory_usage_bytes = df.memory_usage(deep=True).sum()
+        
+        # Convert to MB for better readability
+        total_memory_usage_mb = total_memory_usage_bytes / (1024 ** 2)
+        
+        typer.echo(f"In-memory size of the Parquet file: {total_memory_usage_mb:.2f} MB")
+    except Exception as e:
+        typer.echo(f"An error occurred: {e}")
+
+
+@app.command()
+def tail(file_path: Path, num_rows: int = typer.Option(5, help="Number of rows to display. Default is 5")) -> None:
+    """
+    Print the last few rows of a Parquet file.
+    """
+    typer.echo(f"Last {num_rows} rows of the Parquet file:")
+    try:
+        df = pd.read_parquet(file_path)
+        typer.echo(df.tail(num_rows))
+    except Exception as e:
+        typer.echo(f"An error occurred: {e}")
+
+
 if __name__ == "__main__":
     app()
