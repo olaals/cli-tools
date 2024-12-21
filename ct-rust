@@ -3,20 +3,17 @@
 import typer
 from ct_rust_lib.tree_sitter_builder import build_language_library
 from ct_rust_lib.function_processor import extract_functions
+from pathlib import Path
 
 app = typer.Typer()
 
-@app.command()
-def main(
+@app.command("extract-functions")
+def extract_functions_cmd(
     file_path: str = typer.Argument(..., help="Path to the Rust file"),
     pub_only: bool = typer.Option(True, help="If true, return only public functions"),
 ):
     """
-    Command to extract function names from a Rust file using tree-sitter.
-
-    Args:
-        file_path (str): Path to the Rust file.
-        pub_only (bool): If true, return only public functions; otherwise, return all functions.
+    Extract function names from a Rust file using tree-sitter.
     """
     try:
         build_language_library()
@@ -25,6 +22,44 @@ def main(
             typer.echo("\n".join(functions))
         else:
             typer.echo("No functions found.")
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+
+@app.command("create-mod-rs")
+def create_mod_rs(
+    dir_path: str = typer.Argument(..., help="Path to the directory containing .rs files"),
+):
+    """
+    Create a mod.rs file that includes all .rs files in the directory and re-exports public functions.
+    """
+    try:
+        dir_path = Path(dir_path)
+        if not dir_path.is_dir():
+            raise ValueError(f"{dir_path} is not a directory.")
+
+        # Gather all .rs files except mod.rs
+        rust_files = [f for f in dir_path.glob("*.rs") if f.name != "mod.rs"]
+        mod_lines = []
+        pub_use_lines = []
+
+        build_language_library()
+
+        for rust_file in rust_files:
+            module_name = rust_file.stem
+            mod_lines.append(f"mod {module_name};")
+            functions = extract_functions(str(rust_file), pub_only=True)
+            if functions:
+                pub_use_lines.append(f"pub use {module_name}::{{{', '.join(functions)}}};")
+
+        # Combine the lines for mod.rs
+        mod_rs_content = "\n".join(mod_lines + [""] + pub_use_lines)
+
+        # Write to mod.rs
+        mod_file_path = dir_path / "mod.rs"
+        with mod_file_path.open("w") as mod_file:
+            mod_file.write(mod_rs_content)
+
+        typer.echo(f"mod.rs created successfully in {dir_path}")
     except Exception as e:
         typer.echo(f"Error: {e}")
 
