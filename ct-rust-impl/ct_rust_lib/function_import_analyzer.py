@@ -164,50 +164,72 @@ def extract_functions(root, code: str) -> dict:
 
     return functions
 
+
 def collect_identifiers(node, identifier_set: set, code: str):
     if node.type == "identifier":
         identifier = code[node.start_byte:node.end_byte]
         identifier_set.add(identifier)
         logger.debug(f"Collected identifier: {identifier}")
-    elif node.type == "type_reference":
+    elif node.type in ["type_reference", "trait_bound", "impl_trait"]:
         collect_type_identifiers(node, identifier_set, code)
     else:
         for child in node.children:
             collect_identifiers(child, identifier_set, code)
 
+
 def collect_type_identifiers(node, identifier_set: set, code: str):
     if node.type == "path":
         path_text = code[node.start_byte:node.end_byte].strip()
         symbols = path_text.split("::")
-        if symbols:
-            symbol = symbols[-1]
-            identifier_set.add(symbol)
-            logger.debug(f"Collected type identifier: {symbol}")
+        for symbol in symbols:
+            if symbol:  # Ensure symbol is not empty
+                identifier_set.add(symbol)
+                logger.debug(f"Collected type identifier: {symbol}")
+    elif node.type in ["generic_type", "impl_trait"]:
+        for child in node.children:
+            collect_type_identifiers(child, identifier_set, code)
     else:
         for child in node.children:
             collect_type_identifiers(child, identifier_set, code)
 
+
 def map_identifiers_to_imports(functions: dict, symbol_to_import: dict, code: str) -> dict:
     logger.debug("Mapping identifiers to imports.")
     function_imports = {}
+
+    # Expand grouped imports in symbol_to_import
+    expanded_imports = {}
+    for symbol, imp in symbol_to_import.items():
+        if "{" in imp:  # Handle grouped imports
+            base_import = imp.split("{")[0].strip() + "{};"
+            group_items = imp.split("{")[1].split("}")[0].split(",")
+            for item in group_items:
+                item = item.strip()
+                expanded_imports[item] = base_import.format(item)
+        else:
+            expanded_imports[symbol] = imp
+
     for func, idents in functions.items():
         function_imports[func] = set()
         for ident in idents:
-            if ident in symbol_to_import:
-                function_imports[func].add(symbol_to_import[ident])
-                logger.debug(f"Function '{func}' uses import '{symbol_to_import[ident]}' via '{ident}'")
+            if ident in expanded_imports:
+                function_imports[func].add(expanded_imports[ident])
+                logger.debug(f"Function '{func}' uses import '{expanded_imports[ident]}' via '{ident}'")
             elif "::" in ident:
                 base_ident = ident.split("::")[0]
-                if base_ident in symbol_to_import:
-                    function_imports[func].add(symbol_to_import[base_ident])
-                    logger.debug(f"Function '{func}' uses import '{symbol_to_import[base_ident]}' via '{base_ident}'")
+                if base_ident in expanded_imports:
+                    function_imports[func].add(expanded_imports[base_ident])
+                    logger.debug(f"Function '{func}' uses import '{expanded_imports[base_ident]}' via '{base_ident}'")
+
+        # Sort imports for each function
+        function_imports[func] = sorted(function_imports[func])
 
     logger.debug("Function Imports:")
     for func, imps in function_imports.items():
         logger.debug(f"{func}: {imps}")
 
-    function_imports = {k: sorted(v) for k, v in function_imports.items()}
     return function_imports
+
 
 def identify_unknown_imports(symbol_to_import: dict, function_imports: dict) -> list:
     logger.debug("Identifying unknown imports.")
