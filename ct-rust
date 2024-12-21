@@ -4,8 +4,39 @@ import typer
 from ct_rust_lib.tree_sitter_builder import build_language_library
 from ct_rust_lib.function_processor import extract_functions
 from pathlib import Path
+from ct_rust_lib.function_import_analyzer import analyze_function_imports
 
 app = typer.Typer()
+
+
+@app.command("analyze-imports")
+def analyze_imports(
+    file_path: str = typer.Argument(..., help="Path to the Rust file")
+):
+    """
+    Analyze which imports are used by which functions in a Rust file.
+    """
+    try:
+        file_path_obj = Path(file_path)
+        if not file_path_obj.is_file():
+            raise ValueError(f"{file_path} is not a valid file.")
+
+        functions, unknown_imports = analyze_function_imports(file_path)
+
+        # Print results
+        for function, imports in functions.items():
+            typer.echo(f"{function}")
+            for imp in imports:
+                typer.echo(f"-> {imp}")
+            typer.echo("")
+
+        if unknown_imports:
+            typer.echo("unknown")
+            for imp in unknown_imports:
+                typer.echo(f"-> {imp}")
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+
 
 @app.command("extract-functions")
 def extract_functions_cmd(
