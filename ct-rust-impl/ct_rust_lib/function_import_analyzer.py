@@ -25,7 +25,7 @@ def analyze_function_imports(file_path: str):
     """
     code = read_file(file_path)
     root = parse_code(code)
-    
+
     symbol_to_import = extract_use_declarations(root, code)
     functions = extract_functions(root, code)
     function_imports = map_identifiers_to_imports(functions, symbol_to_import, code)
@@ -57,7 +57,7 @@ def parse_code(code: str):
         code (str): Rust source code.
 
     Returns:
-        tree_sitter.Tree: Parsed syntax tree.
+        tree_sitter.Node: Root node of the parsed syntax tree.
     """
     RUST_LANGUAGE = Language(str(LIB_PATH), "rust")
     parser = Parser()
@@ -278,5 +278,187 @@ def identify_unknown_imports(symbol_to_import: dict, function_imports: dict) -> 
     return sorted(unknown_imports)
 
 
+def analyze_function_definitions(file_path: str) -> dict:
+    """
+    Analyze function definitions along with their input arguments in a Rust file.
+
+    Args:
+        file_path (str): Path to the Rust file.
+
+    Returns:
+        dict: A dictionary where keys are function names, and values are dictionaries containing
+              input arguments and their types.
+    """
+    code = read_file(file_path)
+    root = parse_code(code)
+
+    functions = extract_function_definitions_with_args(root, code)
+
+    return functions
+
+
+def extract_function_definitions_with_args(root, code: str) -> dict:
+    """
+    Extract function definitions along with their input arguments and types.
+
+    Args:
+        root (tree_sitter.Node): Root node of the syntax tree.
+        code (str): Rust source code.
+
+    Returns:
+        dict: A mapping from function names to dictionaries of argument names and their types.
+    """
+    function_definitions = {}
+
+    def extract_functions_recursive(node):
+        if node.type != "function_item":
+            for child in node.children:
+                extract_functions_recursive(child)
+            return
+
+        # Extract function name
+        function_name = None
+        parameters_node = None
+        for child in node.children:
+            if child.type == "identifier":
+                function_name = code[child.start_byte:child.end_byte]
+            elif child.type == "parameters":
+                parameters_node = child
+
+        if function_name and parameters_node:
+            args = extract_parameters(parameters_node, code)
+            function_definitions[function_name] = args
+            print(f"\nFunction '{function_name}' Arguments:")
+            for arg_name, arg_type in args.items():
+                print(f"  {arg_name}: {arg_type}")
+
+    extract_functions_recursive(root)
+
+    return function_definitions
+
+
+def extract_parameters(parameters_node, code: str) -> dict:
+    """
+    Extract parameters and their types from a parameters node.
+
+    Args:
+        parameters_node (tree_sitter.Node): The parameters node.
+        code (str): Rust source code.
+
+    Returns:
+        dict: A mapping from parameter names to their types.
+    """
+    params = {}
+
+    for child in parameters_node.named_children:
+        if child.type == "parameter":
+            param_name = None
+            param_type = None
+            for param_child in child.children:
+                if param_child.type == "identifier":
+                    param_name = code[param_child.start_byte:param_child.end_byte]
+                elif param_child.type == "type_reference":
+                    param_type = extract_type(param_child, code)
+            if param_name and param_type:
+                params[param_name] = param_type
+
+    return params
+
+
+def extract_type(type_node, code: str) -> str:
+    """
+    Extract the type from a type node.
+
+    Args:
+        type_node (tree_sitter.Node): The type node.
+        code (str): Rust source code.
+
+    Returns:
+        str: The extracted type as a string.
+    """
+    if type_node.type == "type_reference":
+        return code[type_node.start_byte:type_node.end_byte]
+    else:
+        # Handle other type node types if necessary
+        return code[type_node.start_byte:type_node.end_byte]
+
+
 # Optional: Pytest tests can be added below if desired.
 # Ensure that tests are within the `if __name__ == "__main__":` block to prevent execution during imports.
+
+if __name__ == "__main__":
+    import pytest
+    import tempfile
+    import os
+
+    def test_analyze_function_definitions():
+        """
+        Test that 'InputLinksConfig' is correctly detected in the 'process_links' function.
+        """
+        rust_code = """
+        use crate::combine_processed_parquet::combine_all_for_year;
+        use crate::game_processing::process_games;
+        use crate::models::InputLinksConfig;
+        use crate::pgn_zst_io::create_reader;
+        use log::{debug, info};
+        use regex::Regex;
+        use std::path::Path;
+        use std::sync::{atomic::AtomicUsize, Arc};
+
+        pub fn extract_year_month(url: &str) -> Result<(u32, u8), &'static str> {
+            // Function implementation...
+        }
+
+        pub fn process_links(
+            config: InputLinksConfig,
+            output_dir: &Path,
+            batch_size: usize,
+            hash_bucket_size: u16,
+            common_positions: Option<&std::collections::HashSet<String>>,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            // Function implementation...
+        }
+        """
+
+        # Create a temporary Rust file
+        with tempfile.NamedTemporaryFile(mode='w+', suffix='.rs', delete=False) as tmp_file:
+            tmp_file_name = tmp_file.name
+            tmp_file.write(rust_code)
+            tmp_file.flush()
+
+        try:
+            # Analyze function definitions
+            functions = analyze_function_definitions(tmp_file_name)
+
+            # Expected result
+            expected = {
+                "extract_year_month": {
+                    "url": "&str"
+                },
+                "process_links": {
+                    "config": "InputLinksConfig",
+                    "output_dir": "&Path",
+                    "batch_size": "usize",
+                    "hash_bucket_size": "u16",
+                    "common_positions": "Option<&std::collections::HashSet<String>>"
+                }
+            }
+
+            assert functions == expected, f"Expected {expected}, but got {functions}"
+
+            # Additionally, analyze imports and verify 'InputLinksConfig' is mapped correctly
+            function_imports, unknown_imports = analyze_function_imports(tmp_file_name)
+
+            # 'InputLinksConfig' should be mapped to its import
+            assert "process_links" in function_imports, "'process_links' not found in function imports."
+            assert any("use crate::models::InputLinksConfig;" in imp for imp in function_imports["process_links"]), \
+                "'InputLinksConfig' import not correctly mapped for 'process_links'."
+
+            print("\nTest 'test_analyze_function_definitions' passed successfully.")
+
+        finally:
+            # Clean up the temporary file
+            os.unlink(tmp_file_name)
+
+    # Run pytest
+    pytest.main([__file__])

@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+
+import typer
+from ct_rust_lib.tree_sitter_builder import build_language_library
+from ct_rust_lib.function_processor import extract_functions
+from pathlib import Path
+from ct_rust_lib.function_import_analyzer import analyze_function_imports
+
+app = typer.Typer()
+
+try:
+    build_language_library()
+except Exception as e:
+    typer.echo(f"Error: {e}")
+
+@app.command("analyze-imports")
+def analyze_imports(
+    file_path: str = typer.Argument(..., help="Path to the Rust file")
+):
+    """
+    Analyze which imports are used by which functions in a Rust file.
+    """
+    try:
+        file_path_obj = Path(file_path)
+        if not file_path_obj.is_file():
+            raise ValueError(f"{file_path} is not a valid file.")
+
+        functions, unknown_imports = analyze_function_imports(file_path)
+
+        # Print results
+        for function, imports in functions.items():
+            typer.echo(f"{function}")
+            for imp in imports:
+                typer.echo(f"-> {imp}")
+            typer.echo("")
+
+        if unknown_imports:
+            typer.echo("unknown")
+            for imp in unknown_imports:
+                typer.echo(f"-> {imp}")
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+
+
+@app.command("extract-functions")
+def extract_functions_cmd(
+    file_path: str = typer.Argument(..., help="Path to the Rust file"),
+    pub_only: bool = typer.Option(True, help="If true, return only public functions"),
+):
+    """
+    Extract function names from a Rust file using tree-sitter.
+    """
+    try:
+        build_language_library()
+        functions = extract_functions(file_path, pub_only)
+        if functions:
+            typer.echo("\n".join(functions))
+        else:
+            typer.echo("No functions found.")
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+
+
+from ct_rust_lib.mod_rs_creator import generate_and_write_mod_rs
+
+@app.command("create-mod-rs")
+def create_mod_rs(
+    dir_str: str = typer.Argument(..., help="Path to the directory containing .rs files"),
+):
+    """
+    Create a mod.rs file that includes all .rs files in the directory and re-exports public functions.
+    """
+    try:
+        dir_path: Path = Path(dir_str)
+        mod_file_path = generate_and_write_mod_rs(dir_path)
+        typer.echo(f"mod.rs created successfully at {mod_file_path}")
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+
+if __name__ == "__main__":
+    app()
