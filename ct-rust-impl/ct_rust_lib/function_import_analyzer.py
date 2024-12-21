@@ -12,9 +12,7 @@ def analyze_function_imports(file_path: str) -> FunctionImportAnalysis:
         file_path (str): Path to the Rust file.
 
     Returns:
-        tuple:
-            dict: A dictionary where keys are function names, and values are lists of imports.
-            list: A list of imports that could not be associated with any function (unknown).
+        FunctionImportAnalysis: Analysis result containing function imports and unknown imports.
     """
     logger.debug(f"Analyzing function imports for file: {file_path}")
     code = read_file(file_path)
@@ -170,7 +168,8 @@ def collect_identifiers(node, identifier_set: set, code: str):
         identifier = code[node.start_byte:node.end_byte]
         identifier_set.add(identifier)
         logger.debug(f"Collected identifier: {identifier}")
-    elif node.type in ["type_reference", "trait_bound", "impl_trait"]:
+    elif node.type in ["type_reference", "trait_bounds", "higher_ranked_trait_bound", "impl_trait"]:
+        logger.debug(f"Processing type-related node: {node.type}")
         collect_type_identifiers(node, identifier_set, code)
     else:
         for child in node.children:
@@ -178,14 +177,16 @@ def collect_identifiers(node, identifier_set: set, code: str):
 
 
 def collect_type_identifiers(node, identifier_set: set, code: str):
-    if node.type == "path":
+    if node.type in ["path", "scoped_type_identifier"]:
         path_text = code[node.start_byte:node.end_byte].strip()
         symbols = path_text.split("::")
+        logger.debug(f"Processing path: {path_text}")
         for symbol in symbols:
             if symbol:  # Ensure symbol is not empty
                 identifier_set.add(symbol)
                 logger.debug(f"Collected type identifier: {symbol}")
     elif node.type in ["generic_type", "impl_trait"]:
+        logger.debug(f"Processing type-related node: {node.type}")
         for child in node.children:
             collect_type_identifiers(child, identifier_set, code)
     else:

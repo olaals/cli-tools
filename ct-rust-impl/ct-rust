@@ -6,6 +6,7 @@ from ct_rust_lib.function_processor import extract_functions
 from pathlib import Path
 from ct_rust_lib.function_import_analyzer import analyze_function_imports
 from ct_rust_lib.import_updater import update_imports_in_directory
+from ct_rust_lib.node_type_finder import find_node_types
 
 
 app = typer.Typer()
@@ -99,6 +100,32 @@ def redo_import(
                 typer.echo(f"- {file}")
         else:
             typer.echo("No imports were updated.")
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+
+@app.command("node-type")
+def node_type_cmd(
+    file_path: str = typer.Argument(..., help="Path to the Rust file"),
+    name: str = typer.Argument(..., help="Name to search for (variable, trait, etc.)"),
+):
+    """
+    Print node types corresponding to the given name in the Rust file.
+    
+    Example:
+        ct-rust node-type <input-file.rs> InputLinksConfig
+    """
+    try:
+        file_path_obj = Path(file_path)
+        if not file_path_obj.is_file():
+            raise ValueError(f"{file_path} is not a valid file.")
+
+        node_types = find_node_types(file_path, name)
+
+        if node_types:
+            for node_type in node_types:
+                typer.echo(f"{name}: {node_type}")
+        else:
+            typer.echo(f"No node types found for '{name}' in {file_path}.")
     except Exception as e:
         typer.echo(f"Error: {e}")
 
