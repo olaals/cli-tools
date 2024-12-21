@@ -27,13 +27,13 @@ def extract_functions_cmd(
 
 @app.command("create-mod-rs")
 def create_mod_rs(
-    dir_path: str = typer.Argument(..., help="Path to the directory containing .rs files"),
+    dir_str: str = typer.Argument(..., help="Path to the directory containing .rs files"),
 ):
     """
     Create a mod.rs file that includes all .rs files in the directory and re-exports public functions.
     """
     try:
-        dir_path = Path(dir_path)
+        dir_path: Path = Path(dir_str)
         if not dir_path.is_dir():
             raise ValueError(f"{dir_path} is not a directory.")
 
