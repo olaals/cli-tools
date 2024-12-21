@@ -142,6 +142,7 @@ def extract_use_declarations(root, code: str) -> dict:
 
     return symbol_to_import
 
+
 def extract_functions(root, code: str) -> dict:
     """
     Extract function definitions and collect used identifiers.
@@ -172,7 +173,8 @@ def extract_functions(root, code: str) -> dict:
             functions[function_name] = set()
             logger.debug(f"Processing function: {function_name}")
             for child in node.children:
-                if child.type in ["parameters", "block", "return_type"]:
+                # Include 'generic_parameters' to capture trait bounds
+                if child.type in ["parameters", "block", "return_type", "generic_parameters"]:
                     collect_identifiers(child, functions[function_name], code)
 
     extract_functions_recursive(root)
@@ -183,14 +185,30 @@ def extract_functions(root, code: str) -> dict:
 
     return functions
 
-
 def collect_identifiers(node, identifier_set: set, code: str):
+    """
+    Recursively collect identifiers from the given node.
+
+    Args:
+        node (tree_sitter.Node): The current node to process.
+        identifier_set (set): The set to collect identifiers into.
+        code (str): The source code being analyzed.
+    """
+    logger.debug(f"Visiting node type: {node.type}")
     if node.type == "identifier":
         identifier = code[node.start_byte:node.end_byte]
         identifier_set.add(identifier)
         logger.debug(f"Collected identifier: {identifier}")
-    elif node.type in ["type_reference", "trait_bounds", "higher_ranked_trait_bound", "impl_trait"]:
-        logger.debug(f"Processing type-related node: {node.type}")
+    elif node.type in [
+        "type_reference",
+        "trait_bound",
+        "trait_bound_list",
+        "higher_ranked_trait_bound",
+        "impl_trait",
+        "type_identifier",
+        "where_clause",
+        "type_constraint",
+    ]:
         collect_type_identifiers(node, identifier_set, code)
     else:
         for child in node.children:
@@ -198,15 +216,35 @@ def collect_identifiers(node, identifier_set: set, code: str):
 
 
 def collect_type_identifiers(node, identifier_set: set, code: str):
-    if node.type in ["path", "scoped_type_identifier"]:
+    """
+    Recursively collect type identifiers from the given node.
+
+    Args:
+        node (tree_sitter.Node): The current node to process.
+        identifier_set (set): The set to collect identifiers into.
+        code (str): The source code being analyzed.
+    """
+    if node.type == "path":
         path_text = code[node.start_byte:node.end_byte].strip()
         symbols = path_text.split("::")
         logger.debug(f"Processing path: {path_text}")
         for symbol in symbols:
-            if symbol:  # Ensure symbol is not empty
+            if symbol:
                 identifier_set.add(symbol)
-                logger.debug(f"Collected type identifier: {symbol}")
-    elif node.type in ["generic_type", "impl_trait"]:
+                logger.debug(f"Collected type identifier from path: {symbol}")
+    elif node.type == "scoped_type_identifier":
+        path_text = code[node.start_byte:node.end_byte].strip()
+        symbols = path_text.split("::")
+        logger.debug(f"Processing scoped type identifier: {path_text}")
+        for symbol in symbols:
+            if symbol:
+                identifier_set.add(symbol)
+                logger.debug(f"Collected scoped type identifier: {symbol}")
+    elif node.type == "type_identifier":
+        identifier = code[node.start_byte:node.end_byte].strip()
+        identifier_set.add(identifier)
+        logger.debug(f"Collected type identifier: {identifier}")
+    elif node.type in ["generic_type", "impl_trait", "trait_bound_list"]:
         logger.debug(f"Processing type-related node: {node.type}")
         for child in node.children:
             collect_type_identifiers(child, identifier_set, code)

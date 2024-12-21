@@ -7,6 +7,7 @@ from pathlib import Path
 from ct_rust_lib.function_import_analyzer import analyze_function_imports
 from ct_rust_lib.import_updater import update_imports_in_directory
 from ct_rust_lib.node_type_finder import find_node_types
+from ct_rust_lib.splitter import split_file
 
 
 app = typer.Typer()
@@ -126,6 +127,33 @@ def node_type_cmd(
                 typer.echo(f"{name}: {node_type}")
         else:
             typer.echo(f"No node types found for '{name}' in {file_path}.")
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+
+@app.command("split-file")
+def split_file_cmd(
+    file_path: str = typer.Argument(..., help="Path to the Rust file to split."),
+    output_dir: str = typer.Option(".", help="Directory to place the split files."),
+):
+    """
+    Split a Rust file into separate files for each function, including necessary imports.
+    
+    Example:
+        ct-rust split-file links_processing.rs --output-dir ./split_files
+    """
+    try:
+        file_path_obj = Path(file_path)
+        output_dir_obj = Path(output_dir)
+
+        if not file_path_obj.is_file():
+            raise ValueError(f"{file_path} is not a valid file.")
+
+        if not output_dir_obj.exists():
+            output_dir_obj.mkdir(parents=True, exist_ok=True)
+
+        split_file(file_path_obj, output_dir_obj)
+
+        typer.echo(f"File '{file_path}' has been split into individual function files in '{output_dir}'.")
     except Exception as e:
         typer.echo(f"Error: {e}")
 
