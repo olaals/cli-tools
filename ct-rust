@@ -25,6 +25,9 @@ def extract_functions_cmd(
     except Exception as e:
         typer.echo(f"Error: {e}")
 
+
+from ct_rust_lib.mod_rs_creator import generate_and_write_mod_rs
+
 @app.command("create-mod-rs")
 def create_mod_rs(
     dir_str: str = typer.Argument(..., help="Path to the directory containing .rs files"),
@@ -34,32 +37,8 @@ def create_mod_rs(
     """
     try:
         dir_path: Path = Path(dir_str)
-        if not dir_path.is_dir():
-            raise ValueError(f"{dir_path} is not a directory.")
-
-        # Gather all .rs files except mod.rs
-        rust_files = [f for f in dir_path.glob("*.rs") if f.name != "mod.rs"]
-        mod_lines = []
-        pub_use_lines = []
-
-        build_language_library()
-
-        for rust_file in rust_files:
-            module_name = rust_file.stem
-            mod_lines.append(f"mod {module_name};")
-            functions = extract_functions(str(rust_file), pub_only=True)
-            if functions:
-                pub_use_lines.append(f"pub use {module_name}::{{{', '.join(functions)}}};")
-
-        # Combine the lines for mod.rs
-        mod_rs_content = "\n".join(mod_lines + [""] + pub_use_lines)
-
-        # Write to mod.rs
-        mod_file_path = dir_path / "mod.rs"
-        with mod_file_path.open("w") as mod_file:
-            mod_file.write(mod_rs_content)
-
-        typer.echo(f"mod.rs created successfully in {dir_path}")
+        mod_file_path = generate_and_write_mod_rs(dir_path)
+        typer.echo(f"mod.rs created successfully at {mod_file_path}")
     except Exception as e:
         typer.echo(f"Error: {e}")
 
