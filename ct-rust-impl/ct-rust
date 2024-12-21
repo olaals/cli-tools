@@ -5,6 +5,8 @@ from ct_rust_lib.tree_sitter_builder import build_language_library
 from ct_rust_lib.function_processor import extract_functions
 from pathlib import Path
 from ct_rust_lib.function_import_analyzer import analyze_function_imports
+from ct_rust_lib.import_updater import update_imports_in_directory
+
 
 app = typer.Typer()
 
@@ -74,6 +76,27 @@ def create_mod_rs(
         dir_path: Path = Path(dir_str)
         mod_file_path = generate_and_write_mod_rs(dir_path)
         typer.echo(f"mod.rs created successfully at {mod_file_path}")
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+
+
+@app.command("redo-import")
+def redo_import(
+    old_import: str = typer.Argument(..., help="The old import to be replaced."),
+    new_import: str = typer.Argument(..., help="The new import to replace with."),
+    dir_path: str = typer.Argument(..., help="Path to the directory containing .rs files."),
+):
+    """
+    Replace all instances of an old import with a new one across all .rs files in a directory.
+    """
+    try:
+        updated_files = update_imports_in_directory(Path(dir_path), old_import, new_import)
+        if updated_files:
+            typer.echo(f"Updated imports in {len(updated_files)} file(s):")
+            for file in updated_files:
+                typer.echo(f"- {file}")
+        else:
+            typer.echo("No imports were updated.")
     except Exception as e:
         typer.echo(f"Error: {e}")
 
