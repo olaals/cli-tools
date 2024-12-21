@@ -15,6 +15,9 @@ try:
 except Exception as e:
     typer.echo(f"Error: {e}")
 
+
+from ct_rust_lib.models import FunctionImportAnalysis  # Import the new dataclass
+
 @app.command("analyze-imports")
 def analyze_imports(
     file_path: str = typer.Argument(..., help="Path to the Rust file")
@@ -27,22 +30,21 @@ def analyze_imports(
         if not file_path_obj.is_file():
             raise ValueError(f"{file_path} is not a valid file.")
 
-        functions, unknown_imports = analyze_function_imports(file_path)
+        analysis = analyze_function_imports(file_path)  # Updated to return a dataclass
 
         # Print results
-        for function, imports in functions.items():
+        for function, imports in analysis.function_imports.items():
             typer.echo(f"{function}")
             for imp in imports:
                 typer.echo(f"-> {imp}")
             typer.echo("")
 
-        if unknown_imports:
+        if analysis.unknown_imports:
             typer.echo("unknown")
-            for imp in unknown_imports:
+            for imp in analysis.unknown_imports:
                 typer.echo(f"-> {imp}")
     except Exception as e:
         typer.echo(f"Error: {e}")
-
 
 @app.command("extract-functions")
 def extract_functions_cmd(
