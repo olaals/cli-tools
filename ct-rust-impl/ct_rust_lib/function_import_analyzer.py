@@ -3,6 +3,7 @@ from tree_sitter import Language, Parser
 from ct_rust_lib.tree_sitter_builder import LIB_PATH
 from .logger import logger
 from .models import FunctionImportAnalysis
+from .node_type_finder import find_node_types
 
 def analyze_function_imports(file_path: str) -> FunctionImportAnalysis:
     """
@@ -18,13 +19,33 @@ def analyze_function_imports(file_path: str) -> FunctionImportAnalysis:
     code = read_file(file_path)
     root = parse_code(code)
 
+
+
     symbol_to_import = extract_use_declarations(root, code)
+    debug_print_node_types_to_find(symbol_to_import, file_path)
     functions = extract_functions(root, code)
     function_imports = map_identifiers_to_imports(functions, symbol_to_import, code)
     unknown_imports = identify_unknown_imports(symbol_to_import, function_imports)
 
     logger.debug("Completed analysis of function imports.")
     return FunctionImportAnalysis(function_imports=function_imports, unknown_imports=unknown_imports)
+
+def debug_print_node_types_to_find(symbol_to_import: dict, file_path: str):
+    """
+    Debug function to print node types for each symbol in use declarations.
+
+    Args:
+        symbol_to_import (dict): Mapping from symbol names to their import statements.
+        file_path (str): Path to the Rust file.
+    """
+    logger.debug("Debugging node types for each symbol in use declarations:")
+    for symbol in symbol_to_import.keys():
+        node_types = find_node_types(file_path, symbol)
+        if node_types:
+            for node_type in node_types:
+                logger.debug(f"{symbol}: {node_type}")
+        else:
+            logger.debug(f"{symbol}: No node types found")
 
 
 def read_file(file_path: str) -> str:
