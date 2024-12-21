@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+
+import typer
+from ct_rust_lib.tree_sitter_builder import build_language_library
+from ct_rust_lib.function_processor import extract_functions
+
+app = typer.Typer()
+
+@app.command()
+def main(
+    file_path: str = typer.Argument(..., help="Path to the Rust file"),
+    pub_only: bool = typer.Option(True, help="If true, return only public functions"),
+):
+    """
+    Command to extract function names from a Rust file using tree-sitter.
+
+    Args:
+        file_path (str): Path to the Rust file.
+        pub_only (bool): If true, return only public functions; otherwise, return all functions.
+    """
+    try:
+        build_language_library()
+        functions = extract_functions(file_path, pub_only)
+        if functions:
+            typer.echo("\n".join(functions))
+        else:
+            typer.echo("No functions found.")
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+
+if __name__ == "__main__":
+    app()
