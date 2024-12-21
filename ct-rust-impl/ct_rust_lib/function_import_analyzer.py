@@ -11,7 +11,7 @@ import logging
 # logger = logging.getLogger(__name__)
 
 
-def analyze_function_imports(file_path: str):
+def analyze_function_imports(file_path: str) -> tuple[dict, list]:
     """
     Analyze which imports are used by each function in a Rust file.
 
