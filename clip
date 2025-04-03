@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # clip_recursive.sh
 # Usage: ./clip_recursive.sh [--tree] [--cmd "ls -la"] [--head n] filename1.txt dir1/ filename2.txt ...
@@ -10,110 +10,117 @@ head_count=0
 
 # Get the script's directory
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-gitignore_path="$script_dir/.gitignore"  # Relative to script location
+gitignore_path="$script_dir/.gitignore" # Relative to script location
 exclude_list=()
 
 # Read the .gitignore file and populate the exclude_list
 if [ -f "$gitignore_path" ]; then
-  while IFS= read -r line; do
-    # Skip comments and empty lines
-    if [[ "$line" != \#* ]] && [[ -n "$line" ]]; then
-      exclude_list+=("$line")
-    fi
-  done < "$gitignore_path"
+    while IFS= read -r line; do
+        # Skip comments and empty lines
+        if [[ "$line" != \#* ]] && [[ -n "$line" ]]; then
+            exclude_list+=("$line")
+        fi
+    done <"$gitignore_path"
 fi
 
 # Check if a path is excluded
 is_excluded() {
-  local item=$1
-  for pattern in "${exclude_list[@]}"; do
-    if [[ "$item" == $pattern || "$item" == */$pattern || "$item" == $pattern/* ]]; then
-      echo "Ignored: $item (matched pattern: $pattern)"
-      return 0
-    fi
-  done
-  return 1
+    local item=$1
+    for pattern in "${exclude_list[@]}"; do
+        if [[ "$item" == $pattern || "$item" == */$pattern || "$item" == $pattern/* ]]; then
+            echo "Ignored: $item (matched pattern: $pattern)"
+            return 0
+        fi
+    done
+    return 1
 }
 
 # Loop through all arguments to handle optional flags
 while [ "$#" -gt 0 ]; do
-  case "$1" in
-  --tree)
-    include_tree=true
-    shift
-    ;;
-  --cmd)
-    cmd_command="$2"
-    shift 2
-    ;;
-  --head)
-    head_count="$2"
-    shift 2
-    ;;
-  *)
-    break
-    ;;
-  esac
+    case "$1" in
+    --tree)
+        include_tree=true
+        shift
+        ;;
+    --cmd)
+        cmd_command="$2"
+        shift 2
+        ;;
+    --head)
+        head_count="$2"
+        shift 2
+        ;;
+    *)
+        break
+        ;;
+    esac
 done
 
 # Check for minimum number of arguments
 if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 [--tree] [--cmd \"command_to_run\"] [--head n] filename1.txt dir1/ filename2.txt ..."
-  exit 1
+    echo "Usage: $0 [--tree] [--cmd \"command_to_run\"] [--head n] filename1.txt dir1/ filename2.txt ..."
+    exit 1
 fi
 
 # If --tree flag is present, add the output of `tree` to final_content
 if [ "$include_tree" = true ]; then
-  final_content+="== File Tree ==
+    final_content+="== File Tree ==
 "
-  final_content+="$(tree -L 3 --gitignore)
+    final_content+="$(tree -L 3 --gitignore)
 
 "
 fi
 
 # If --cmd flag is present, run the command and add its output to final_content
 if [ ! -z "$cmd_command" ]; then
-  final_content+="== Command Output ==
+    final_content+="== Command Output ==
 "
-  final_content+="$(eval $cmd_command 2>&1)
+    final_content+="$(eval $cmd_command 2>&1)
 
 "
 fi
 
 # Recursive function to read a file or directory
 process_item() {
-  local item=$1
-  if is_excluded "$item"; then
-    return
-  fi
-  if [ -f "$item" ]; then
-    final_content+="== $item ==
-"
-    if [ "$head_count" -gt 0 ]; then
-      final_content+="$(head -n $head_count "$item")
-
-"
-    else
-      final_content+="$(cat "$item")
-
-"
+    local item=$1
+    if is_excluded "$item"; then
+        return
     fi
-  elif [ -d "$item" ]; then
-    for sub_item in "$item"/*; do
-      process_item "$sub_item"
-    done
-  else
-    echo "Item $item does not exist."
-    exit 1
-  fi
+    if [ -f "$item" ]; then
+        final_content+="== $item ==
+"
+        if [ "$head_count" -gt 0 ]; then
+            final_content+="$(head -n $head_count "$item")
+
+"
+        else
+            final_content+="$(cat "$item")
+
+"
+        fi
+    elif [ -d "$item" ]; then
+        for sub_item in "$item"/*; do
+            process_item "$sub_item"
+        done
+    else
+        echo "Item $item does not exist."
+        exit 1
+    fi
 }
 
 # Loop through remaining arguments to process files and directories
 for item in "$@"; do
-  process_item "$item"
+    process_item "$item"
 done
 
-# Copy the final_content to clipboard
-echo -e "$final_content" | pbcopy
+# Copy the final_content to clipboard using pbcopy if available, else fallback to xclip
+if command -v pbcopy &>/dev/null; then
+    echo -e "$final_content" | pbcopy
+elif command -v xclip &>/dev/null; then
+    echo -e "$final_content" | xclip -selection clipboard
+else
+    echo "Neither pbcopy nor xclip is installed. Cannot copy to clipboard."
+    exit 1
+fi
 
 echo "Contents of files and directories copied to clipboard."

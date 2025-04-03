@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Check if a file name is provided
 if [ "$#" -ne 1 ]; then
@@ -6,6 +6,16 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-# Paste the clipboard contents into the file
-pbpaste > "$1"
+# Determine the appropriate clipboard command
+if command -v pbpaste &>/dev/null; then
+    pbpaste >"$1"
+elif command -v xclip &>/dev/null; then
+    xclip -selection clipboard -o >"$1"
+elif command -v wl-paste &>/dev/null; then
+    wl-paste >"$1"
+else
+    echo "No supported clipboard utility found. Install pbpaste (macOS), xclip (X11), or wl-paste (Wayland)."
+    exit 1
+fi
 
+echo "Clipboard contents pasted into $1."
