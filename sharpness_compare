@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+from pathlib import Path
+from typing import Any
+import cv2
+import typer
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+import numpy as np
+
+app = typer.Typer()
+
+def tenengrad_score(image: Any, ksize: int = 3, threshold: float = 50.0) -> float:
+    """
+    Compute the Tenengrad score for the given image as a measure of sharpness.
+    The image is expected to be in grayscale.
+    
+    Steps:
+      - Compute the Sobel gradients in x and y directions.
+      - Calculate the gradient magnitude.
+      - Optionally threshold the gradients to focus on strong edges.
+      - Return the mean of the squared gradient magnitudes (only for gradients above the threshold).
+      
+    A higher score indicates a sharper image.
+    """
+    gx = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=ksize)
+    gy = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=ksize)
+    grad_magnitude = np.sqrt(gx ** 2 + gy ** 2)
+    
+    # Apply threshold: consider only strong gradients
+    strong_edges = grad_magnitude[grad_magnitude > threshold]
+    
+    # Avoid division by zero if no edges pass the threshold
+    if strong_edges.size == 0:
+        return 0.0
+    
+    # Tenengrad score: mean of squared strong edge magnitudes
+    return np.mean(strong_edges ** 2)
+
+@app.command()
+def main(
+    image1_path: Path = typer.Argument(..., help="Path to the first image"),
+    image2_path: Path = typer.Argument(..., help="Path to the second image")
+) -> None:
+    # Load images in color
+    img1 = cv2.imread(str(image1_path))
+    img2 = cv2.imread(str(image2_path))
+    
+    if img1 is None or img2 is None:
+        typer.echo("Error: One or both images could not be loaded.")
+        raise typer.Exit(code=1)
+    
+    # Convert images to grayscale for sharpness evaluation
+    gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+    sharpness_score1 = tenengrad_score(gray1)
+    sharpness_score2 = tenengrad_score(gray2)
+    
+    # Convert images to RGB for matplotlib display
+    img1_rgb = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
+    img2_rgb = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
+    
+    # Create a matplotlib figure with two subplots
+    fig: Figure = plt.figure(figsize=(10, 5))
+    
+    ax1 = fig.add_subplot(1, 2, 1)
+    ax1.imshow(img1_rgb)
+    ax1.axis("off")
+    ax1.set_title(f"Sharpness Score: {sharpness_score1:.2f}")
+    
+    ax2 = fig.add_subplot(1, 2, 2)
+    ax2.imshow(img2_rgb)
+    ax2.axis("off")
+    ax2.set_title(f"Sharpness Score: {sharpness_score2:.2f}")
+    
+    plt.tight_layout()
+    plt.show()
+
+if __name__ == "__main__":
+    app()

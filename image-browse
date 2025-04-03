@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+import tkinter as tk
+from tkinter import filedialog
+from PIL import Image, ImageTk
+from typing import List
+
+class ImageBrowser:
+    def __init__(self, master: tk.Tk, image_paths: List[Path]) -> None:
+        self.master = master
+        self.image_paths = image_paths
+        self.current_index = 0
+        
+        self.label = tk.Label(master)
+        self.label.pack()
+        
+        self.button_next = tk.Button(master, text="Next", command=self.next_image)
+        self.button_next.pack(pady=10)
+        
+        self.show_image()
+
+    def show_image(self) -> None:
+        image_path = self.image_paths[self.current_index]
+        image = Image.open(image_path)
+        photo = ImageTk.PhotoImage(image)
+        self.label.config(image=photo)
+        self.label.image = photo  # Keep a reference
+        self.master.title(f"{image_path.name}")
+
+    def next_image(self) -> None:
+        self.current_index = (self.current_index + 1) % len(self.image_paths)
+        self.show_image()
+
+def main() -> None:
+    root = tk.Tk()
+    
+    # If a directory is passed as an argument, use it; otherwise open a directory chooser
+    if len(sys.argv) > 1:
+        directory = Path(sys.argv[1])
+    else:
+        directory = Path(filedialog.askdirectory(title="Select Image Directory"))
+    
+    if not directory or not directory.is_dir():
+        print("Invalid directory.")
+        sys.exit(1)
+    
+    # Filter common image extensions
+    image_paths = sorted(p for p in directory.iterdir() if p.suffix.lower() in {'.jpg', '.jpeg', '.png', '.gif', '.bmp'})
+    if not image_paths:
+        print("No image files found in the directory.")
+        sys.exit(1)
+    
+    browser = ImageBrowser(root, image_paths)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()

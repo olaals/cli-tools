@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+from pathlib import Path
+from typing import Any, List
+import cv2
+import numpy as np
+import typer
+import shutil
+
+app = typer.Typer()
+
+def tenengrad_score(image: Any, ksize: int = 3, threshold: float = 50.0) -> float:
+    """
+    Compute the Tenengrad score for the given image as a measure of sharpness.
+    A higher score indicates a sharper image.
+    """
+    gx = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=ksize)
+    gy = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=ksize)
+    grad_magnitude = np.sqrt(gx**2 + gy**2)
+    strong_edges = grad_magnitude[grad_magnitude > threshold]
+    return float(np.mean(strong_edges**2)) if strong_edges.size > 0 else 0.0
+
+@app.command()
+def main(
+    image_dir: Path = typer.Argument(..., help="Path to the directory of images"),
+    bucket_size: int = typer.Option(3, help="Number of sequential images to compare in each bucket"),
+    n_choose_from_bucket: int = typer.Option(1, help="Number of images to select from each bucket based on highest sharpness"),
+    output_dir: Path = typer.Option(Path("sharpest-images"), help="Directory to save the selected sharp images")
+) -> None:
+    # Create the output directory if it doesn't exist
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Get sorted list of image files (filtering common image extensions)
+    valid_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.gif'}
+    images = sorted([p for p in image_dir.iterdir() if p.suffix.lower() in valid_extensions])
+    
+    if not images:
+        typer.echo("No valid image files found in the input directory.")
+        raise typer.Exit(code=1)
+    
+    total_selected = 0
+    # Process images in buckets
+    for i in range(0, len(images), bucket_size):
+        bucket: List[Path] = images[i:i+bucket_size]
+        # Compute sharpness score for each image in the bucket
+        scored_images = []
+        for image_path in bucket:
+            img = cv2.imread(str(image_path))
+            if img is None:
+                typer.echo(f"Warning: Unable to load {image_path}. Skipping.")
+                continue
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            score = tenengrad_score(gray)
+            scored_images.append((score, image_path))
+        
+        # Sort images by descending sharpness score
+        scored_images.sort(key=lambda x: x[0], reverse=True)
+        # Select top n images (if less than n available, choose all)
+        selected = scored_images[:min(n_choose_from_bucket, len(scored_images))]
+        
+        # Copy the selected images to output_dir
+        for score, image_path in selected:
+            dest = output_dir / image_path.name
+            shutil.copy(str(image_path), str(dest))
+            total_selected += 1
+            typer.echo(f"Selected {image_path.name} with score {score:.2f}")
+
+    typer.echo(f"Total {total_selected} images selected and copied to '{output_dir}'.")
+
+if __name__ == "__main__":
+    app()

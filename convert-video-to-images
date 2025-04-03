@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+from typing import Optional
 import cv2
 import typer
 
@@ -9,7 +10,11 @@ app = typer.Typer()
 def main(
     video: Path = typer.Argument(..., help="Path to the video file (supports mp4)"),
     images_per_sec: int = typer.Option(1, help="Number of images to extract per second"),
-    image_dir: Path = typer.Option(Path("images"), help="Directory to save extracted images")
+    image_dir: Path = typer.Option(Path("images"), help="Directory to save extracted images"),
+    start_record_from_sec: float = typer.Option(0, help="Seconds to start capturing images from"),
+    end_record_at_sec: Optional[float] = typer.Option(None, help="Seconds to stop capturing images (defaults to video length)"),
+    crop_horizontal: int = typer.Option(0, help="Pixels to crop from each side horizontally"),
+    crop_vertical: int = typer.Option(0, help="Pixels to crop from top and bottom")
 ) -> None:
     # Create the output directory if it doesn't exist
     image_dir.mkdir(parents=True, exist_ok=True)
@@ -25,20 +30,44 @@ def main(
         typer.echo("Error: Cannot determine FPS of the video")
         raise typer.Exit(code=1)
     
+    total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    video_length_sec = total_frames / fps
+
+    # Calculate start and end frames
+    start_frame = int(start_record_from_sec * fps)
+    end_frame = int(end_record_at_sec * fps) if end_record_at_sec is not None else int(total_frames)
+
+    if start_frame >= total_frames:
+        typer.echo("Error: start_record_from_sec is beyond the video length")
+        raise typer.Exit(code=1)
+
+    # Set the video to the start frame
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+
+    # Calculate frame interval based on desired images per second
     frame_interval = max(int(round(fps / images_per_sec)), 1)
-    
-    count = 0
+
+    current_frame = start_frame
     saved = 0
-    while True:
+    while current_frame < end_frame:
         ret, frame = cap.read()
         if not ret:
             break
-        if count % frame_interval == 0:
+
+        # Crop frame if requested
+        if crop_horizontal or crop_vertical:
+            height, width = frame.shape[:2]
+            if crop_vertical * 2 >= height or crop_horizontal * 2 >= width:
+                typer.echo("Error: Crop values are too large for the frame dimensions.")
+                raise typer.Exit(code=1)
+            frame = frame[crop_vertical:height-crop_vertical, crop_horizontal:width-crop_horizontal]
+
+        if (current_frame - start_frame) % frame_interval == 0:
             output_path = image_dir / f"frame_{saved:05d}.jpg"
             cv2.imwrite(str(output_path), frame)
             saved += 1
-        count += 1
-    
+        current_frame += 1
+
     cap.release()
     typer.echo(f"Extracted {saved} images to '{image_dir}'.")
 
