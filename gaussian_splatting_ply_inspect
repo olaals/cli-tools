@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+from pathlib import Path
+from typing import Any, Optional, Tuple
+import fnmatch
+import typer
+from plyfile import PlyData
+
+app = typer.Typer()
+
+@app.command()
+def goodbye(name: str) -> None:
+    typer.echo(f"Goodbye {name}")
+
+@app.command()
+def hello(name: str) -> None:
+    typer.echo(f"Hello {name}")
+
+@app.command()
+def head(
+    n: int = typer.Option(5, "-n", help="Number of rows to display"),
+    file: Optional[Path] = typer.Argument(
+        None, exists=True, help="Path to the PLY file", required=True
+    ),
+    ignore_headers: Tuple[str, ...] = typer.Option(
+        (),
+        "--ignore-headers",
+        help="Glob patterns for field names to ignore (e.g. '*rest*')",
+    ),
+) -> None:
+    """
+    Print the first N rows (all fields) of the primary element in a PLY file,
+    optionally ignoring fields whose names match any provided glob patterns.
+    """
+    assert file is not None  # required is True, so this will never be None
+    plydata = PlyData.read(file)
+    element = plydata.elements[0]
+    data = element.data
+
+    for i, row in enumerate(data[:n]):
+        row_dict: dict[str, Any] = {}
+        for field in row.dtype.names:
+            if any(fnmatch.fnmatch(field, pattern) for pattern in ignore_headers):
+                continue
+            row_dict[field] = row[field]
+        typer.echo(f"Row {i + 1}: {row_dict}")
+
+if __name__ == "__main__":
+    app()

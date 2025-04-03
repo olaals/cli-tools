@@ -8,6 +8,7 @@ from ct_rust_lib.function_import_analyzer import analyze_function_imports
 from ct_rust_lib.import_updater import update_imports_in_directory
 from ct_rust_lib.node_type_finder import find_node_types
 from ct_rust_lib.splitter import split_file
+from ct_rust_lib.test_module_appender import TestModuleAppender
 
 
 app = typer.Typer()
@@ -154,6 +155,26 @@ def split_file_cmd(
         split_file(file_path_obj, output_dir_obj)
 
         typer.echo(f"File '{file_path}' has been split into individual function files in '{output_dir}'.")
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+
+@app.command("append-test-mod")
+def append_test_mod(
+    file_path: str = typer.Argument(..., help="Path to the Rust file to append the test module."),
+):
+    """
+    Append an empty test module shell at the end of a Rust .rs file for unit tests.
+    
+    Example:
+        ct-rust append-test-mod src/lib.rs
+    """
+    try:
+        appender = TestModuleAppender(file_path)
+        appended = appender.append_test_module()
+        if appended:
+            typer.echo(f"Test module appended successfully to '{file_path}'.")
+        else:
+            typer.echo(f"Test module already exists in '{file_path}'. No changes made.")
     except Exception as e:
         typer.echo(f"Error: {e}")
 
