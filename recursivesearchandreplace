@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") GLOB FROM TO
+  
+  GLOB    : a shell glob for filenames (quote it!), e.g. '*.cs'
+  FROM    : the sed-compatible regex to replace (no enclosing slashes)
+  TO      : the replacement string
+EOF
+  exit 1
+}
+
+if [[ $# -ne 3 ]]; then
+  usage
+fi
+
+GLOB="$1"
+FROM="$2"
+TO="$3"
+
+# Preview what will change
+echo "Replacing /$FROM/ → /$TO/ in files matching $GLOB..."
+grep -RIl --include="$GLOB" -e "$FROM" . || echo "(no matches found)"
+
+# Perform in-place replacement on macOS (zero-length backup suffix)
+find . -type f -name "$GLOB" -print0 \
+  | xargs -0 sed -i '' -E "s/${FROM}/${TO}/g"
+
+echo "Done."

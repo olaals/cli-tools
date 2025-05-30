@@ -18,7 +18,9 @@ if [ -f "$gitignore_path" ]; then
     while IFS= read -r line; do
         # Skip comments and empty lines
         if [[ "$line" != \#* ]] && [[ -n "$line" ]]; then
-            exclude_list+=("$line")
+            # remove any trailing slash so "bin/" → "bin"
+            pattern="${line%/}"
+            exclude_list+=("$pattern")
         fi
     done <"$gitignore_path"
 fi
@@ -64,20 +66,14 @@ fi
 
 # If --tree flag is present, add the output of `tree` to final_content
 if [ "$include_tree" = true ]; then
-    final_content+="== File Tree ==
-"
-    final_content+="$(tree -L 3 --gitignore)
-
-"
+    final_content+="== File Tree ==\n"
+    final_content+="$(tree -L 3 --gitignore)\n\n"
 fi
 
 # If --cmd flag is present, run the command and add its output to final_content
-if [ ! -z "$cmd_command" ]; then
-    final_content+="== Command Output ==
-"
-    final_content+="$(eval $cmd_command 2>&1)
-
-"
+if [ -n "$cmd_command" ]; then
+    final_content+="== Command Output ==\n"
+    final_content+="$(eval "$cmd_command" 2>&1)\n\n"
 fi
 
 # Recursive function to read a file or directory
@@ -87,16 +83,11 @@ process_item() {
         return
     fi
     if [ -f "$item" ]; then
-        final_content+="== $item ==
-"
+        final_content+="== $item ==\n"
         if [ "$head_count" -gt 0 ]; then
-            final_content+="$(head -n $head_count "$item")
-
-"
+            final_content+="$(head -n "$head_count" "$item")\n\n"
         else
-            final_content+="$(cat "$item")
-
-"
+            final_content+="$(cat "$item")\n\n"
         fi
     elif [ -d "$item" ]; then
         for sub_item in "$item"/*; do

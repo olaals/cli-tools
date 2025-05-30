@@ -1,0 +1,39 @@
+#!/bin/bash
+
+get_current_user() {
+    az account show --query user.name -o tsv
+}
+
+get_access_token() {
+    az account get-access-token --resource https://ossrdbms-aad.database.windows.net --query accessToken -o tsv
+}
+
+# Check for required arguments
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <host> <dbname>"
+    exit 1
+fi
+
+HOST=$1
+DBNAME=$2
+
+# Get the current Azure user and access token
+CURRENT_USER=$(get_current_user)
+if [ $? -ne 0 ]; then
+    echo "Error retrieving current Azure user."
+    exit 1
+fi
+
+ACCESS_TOKEN=$(get_access_token)
+if [ $? -ne 0 ]; then
+    echo "Error retrieving access token."
+    exit 1
+fi
+
+PSQL_COMMAND="psql \"host=$HOST dbname=$DBNAME user=$CURRENT_USER password=$ACCESS_TOKEN sslmode=require\""
+
+eval $PSQL_COMMAND
+if [ $? -ne 0 ]; then
+    echo "Error connecting to the database."
+    exit 1
+fi

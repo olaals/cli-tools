@@ -11,6 +11,8 @@ __pycache__/
 
 .DS_STORE
 
+bin/
+
 # Distribution / packaging
 .Python
 build/
