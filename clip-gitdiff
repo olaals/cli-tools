@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# clip-gitdiff.sh
+# Usage: ./clip-gitdiff.sh <file1> [file2] [...]
+
+final_content=""
+
+# Require at least one file argument
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 <file1> [file2 ...]"
+    exit 1
+fi
+
+# Loop over each file and append its last-commit diff
+for file in "$@"; do
+    final_content+="== Showing git diff of $file ==
+"
+    final_content+="$(git --no-pager diff -- "$file")
+
+"
+done
+
+# Copy to clipboard (macOS or Linux)
+if command -v pbcopy &>/dev/null; then
+    echo -e "$final_content" | pbcopy
+elif command -v xclip &>/dev/null; then
+    echo -e "$final_content" | xclip -selection clipboard
+else
+    echo "Neither pbcopy nor xclip is installed. Cannot copy to clipboard."
+    exit 1
+fi
+
+echo "Git diffs of specified files copied to clipboard."

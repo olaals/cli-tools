@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# ff — find files by name (or substring), but ignore anything in .gitignore
+# usage: ff <pattern>
+
+set -euo pipefail
+
+if [ $# -lt 1 ]; then
+  echo "Usage: ff <pattern>"
+  exit 1
+fi
+
+raw_pat="$1"
+
+# if no glob metachar, wrap as *pattern*
+if [[ "$raw_pat" != *[\*\?\[]* ]]; then
+  pat="*${raw_pat}*"
+else
+  pat="$raw_pat"
+fi
+
+# inside a git repo?
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  # for each matching file, run `git check-ignore`.  If it's NOT ignored, print it.
+  find . -type f -name "$pat" \
+    ! -exec git check-ignore -q -- {} \; \
+    -print
+else
+  # fallback outside git
+  find . -type f -name "$pat"
+fi

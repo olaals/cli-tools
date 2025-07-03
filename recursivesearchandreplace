@@ -1,31 +1,125 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env python3
+import argparse
+import re
+import sys
+import difflib
+from pathlib import Path
+from typing import List, Tuple
 
-usage() {
-  cat <<EOF
-Usage: $(basename "$0") GLOB FROM TO
-  
-  GLOB    : a shell glob for filenames (quote it!), e.g. '*.cs'
-  FROM    : the sed-compatible regex to replace (no enclosing slashes)
-  TO      : the replacement string
-EOF
-  exit 1
-}
+# ANSI color codes
+RED = "\033[31m"
+GREEN = "\033[32m"
+RESET = "\033[0m"
 
-if [[ $# -ne 3 ]]; then
-  usage
-fi
 
-GLOB="$1"
-FROM="$2"
-TO="$3"
+def color_line(line: str) -> str:
+    """Color + lines green, - lines red, leave others unchanged."""
+    if line.startswith('+') and not line.startswith('+++'):
+        return f"{GREEN}{line}{RESET}"
+    if line.startswith('-') and not line.startswith('---'):
+        return f"{RED}{line}{RESET}"
+    return line
 
-# Preview what will change
-echo "Replacing /$FROM/ → /$TO/ in files matching $GLOB..."
-grep -RIl --include="$GLOB" -e "$FROM" . || echo "(no matches found)"
 
-# Perform in-place replacement on macOS (zero-length backup suffix)
-find . -type f -name "$GLOB" -print0 \
-  | xargs -0 sed -i '' -E "s/${FROM}/${TO}/g"
+def parse_hunk_header(header: str) -> Tuple[int, int]:
+    """
+    Parse a unified diff hunk header like "@@ -12,6 +12,6 @@"
+    Return (orig_start_index_zero_based, orig_line_count).
+    """
+    m = re.match(r'^@@ -(\d+)(?:,(\d+))?', header)
+    if not m:
+        raise ValueError(f"Invalid hunk header: {header}")
+    start = int(m.group(1)) - 1
+    count = int(m.group(2) or '1')
+    return start, count
 
-echo "Done."
+
+def split_hunks(diff: List[str]) -> List[Tuple[str, List[str]]]:
+    """
+    Given a unified diff as list of lines, return list of (hunk_header, hunk_lines),
+    where hunk_lines include the "@@ ..." line and following context/+/- lines.
+    """
+    # skip the first two lines (file headers)
+    _, _, *rest = diff
+    hunks: List[Tuple[str, List[str]]] = []
+    current_header = None
+    current_lines: List[str] = []
+
+    for line in rest:
+        if line.startswith('@@'):
+            if current_header is not None:
+                hunks.append((current_header, current_lines))
+            current_header = line
+            current_lines = []
+        else:
+            if current_header is None:
+                continue  # skip any stray context
+            current_lines.append(line)
+    if current_header is not None:
+        hunks.append((current_header, current_lines))
+    return hunks
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Recursively search files by glob, show each replacement hunk, and let you approve it."
+    )
+    parser.add_argument("glob", help="recursive glob (e.g. '*.cs')")
+    parser.add_argument("from_regex", help="regex to search for (no delimiters)")
+    parser.add_argument("to", help="replacement string")
+    args = parser.parse_args()
+
+    files = list(Path('.').rglob(args.glob))
+    if not files:
+        print(f"(no files found matching {args.glob})")
+        return
+
+    for file in files:
+        try:
+            original = file.read_text(encoding='utf-8')
+        except UnicodeDecodeError:
+            continue  # skip binary/unreadable
+
+        modified = re.sub(args.from_regex, args.to, original)
+        if original == modified:
+            continue
+
+        diff = list(difflib.unified_diff(
+            original.splitlines(keepends=True),
+            modified.splitlines(keepends=True),
+            fromfile=str(file), tofile=str(file), lineterm=''
+        ))
+        if len(diff) < 3:
+            continue
+
+        hunks = split_hunks(diff)
+        approved: List[Tuple[int, int]] = []
+
+        print(f"\n=== {file} ===")
+        for header, lines in hunks:
+            start, count = parse_hunk_header(header)
+            # display header + colored hunk
+            print(header)
+            for ln in lines:
+                print(color_line(ln.rstrip()))
+            ans = input("Apply this hunk? [y = yes, n = no, q = quit] ").strip().lower()
+            if ans == 'y':
+                approved.append((start, count))
+            elif ans == 'q':
+                print("Quitting; remaining hunks left untouched.")
+                sys.exit(0)
+            else:
+                print("Skipped.")
+
+        if approved:
+            # apply approved hunks manually
+            lines = original.splitlines(keepends=True)
+            for start, count in approved:
+                for i in range(start, min(start + count, len(lines))):
+                    lines[i] = re.sub(args.from_regex, args.to, lines[i])
+            # write back
+            file.write_text(''.join(lines), encoding='utf-8')
+            print(f"✓ applied to {file}")
+
+if __name__ == "__main__":
+    main()
