@@ -1,6 +1,4 @@
-
-
-1: Prefer splitting up a function does io (reading writing) to a function that first does io 
+1: Prefer splitting up a function does io (reading writing) to a function that first does io
 and then do the main processing in its own function and returns the result
 
 For example dont do this:
@@ -32,6 +30,7 @@ def update_imports_in_directory(directory: Path, old_import: str, new_import: st
 ```
 
 but rather this:
+
 ```python
 from pathlib import Path
 from typing import List
@@ -73,6 +72,4 @@ def update_imports_in_directory(directory: Path, old_import: str, new_import: st
 This makes it easier to write tests for process_file_func,
 since we can test the main logic without having to mock the file io.
 
-
 2: Prefer type definitions
-

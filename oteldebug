@@ -1,0 +1,190 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "opentelemetry-api>=1.20.0",
+#     "opentelemetry-sdk>=1.20.0",
+#     "opentelemetry-exporter-otlp-proto-http>=1.20.0",
+#     "click>=8.0.0"
+# ]
+# ///
+
+import click
+import time
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+
+@click.group()
+def cli():
+    """OpenTelemetry testing utilities for debugging OTLP collectors."""
+    pass
+
+
+@cli.command('test-span')
+@click.option('--host', default='localhost', help='OTLP collector host')
+@click.option('--protocol', default='http', type=click.Choice(['http', 'grpc']), help='Protocol to use')
+@click.option('--port', default=4318, help='OTLP collector port')
+@click.option('--span-name', default='test-span', help='Name of the test span')
+@click.option('--service-name', default='curl-test-service', help='Service name for the span')
+@click.option('--console', is_flag=True, help='Also export to console for debugging')
+@click.option('--attributes', multiple=True, help='Add custom attributes (format: key=value)')
+def test_span(host, protocol, port, span_name, service_name, console, attributes):
+    """Send a test span to the OTLP collector."""
+    
+    # Build endpoint URL
+    if protocol == 'http':
+        endpoint = f"http://{host}:{port}/v1/traces"
+    else:
+        endpoint = f"http://{host}:{port}"  # gRPC endpoint
+    
+    click.echo(f"Sending test span to: {endpoint}")
+    click.echo(f"Service: {service_name}")
+    click.echo(f"Span: {span_name}")
+    
+    # Set up OpenTelemetry
+    resource = Resource.create({SERVICE_NAME: service_name})
+    tracer_provider = TracerProvider(resource=resource)
+    
+    # Add console exporter if requested
+    if console:
+        console_exporter = ConsoleSpanExporter()
+        tracer_provider.add_span_processor(BatchSpanProcessor(console_exporter))
+        click.echo("Console export enabled")
+    
+    # Add OTLP exporter
+    try:
+        otlp_exporter = OTLPSpanExporter(endpoint=endpoint)
+        tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+        
+        trace.set_tracer_provider(tracer_provider)
+        tracer = trace.get_tracer(__name__)
+        
+        # Create and send the test span
+        with tracer.start_as_current_span(span_name) as span:
+            span.set_attribute("test.timestamp", str(time.time()))
+            span.set_attribute("test.host", host)
+            span.set_attribute("test.port", port)
+            span.set_attribute("test.protocol", protocol)
+            
+            # Add custom attributes
+            for attr in attributes:
+                if '=' in attr:
+                    key, value = attr.split('=', 1)
+                    span.set_attribute(key, value)
+            
+            span.add_event("Test span created")
+            click.echo("Test span created successfully")
+            
+            # Sleep briefly to ensure span is processed
+            time.sleep(0.1)
+        
+        # Force flush to ensure span is sent
+        tracer_provider.force_flush(timeout_millis=5000)
+        click.echo("Span sent to OTLP collector")
+        
+    except Exception as e:
+        click.echo(f"Error sending span: {e}", err=True)
+        exit(1)
+
+
+@cli.command('test-logs')
+@click.option('--host', default='localhost', help='OTLP collector host')
+@click.option('--protocol', default='http', type=click.Choice(['http', 'grpc']), help='Protocol to use')
+@click.option('--port', default=4318, help='OTLP collector port')
+@click.option('--service-name', default='curl-test-service', help='Service name for the logs')
+@click.option('--message', default='Test log message', help='Log message to send')
+@click.option('--level', default='INFO', type=click.Choice(['DEBUG', 'INFO', 'WARN', 'ERROR']), help='Log level')
+@click.option('--console', is_flag=True, help='Also export to console for debugging')
+def test_logs(host, protocol, port, service_name, message, level, console):
+    """Send test logs to the OTLP collector."""
+    
+    # Build endpoint URL
+    if protocol == 'http':
+        endpoint = f"http://{host}:{port}/v1/logs"
+    else:
+        endpoint = f"http://{host}:{port}"  # gRPC endpoint
+    
+    click.echo(f"Sending test log to: {endpoint}")
+    click.echo(f"Service: {service_name}")
+    click.echo(f"Message: {message}")
+    click.echo(f"Level: {level}")
+    
+    try:
+        from opentelemetry._logs import set_logger_provider
+        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+        from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, ConsoleLogExporter
+        from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+        import logging
+        
+        # Set up OpenTelemetry logging
+        resource = Resource.create({SERVICE_NAME: service_name})
+        log_provider = LoggerProvider(resource=resource)
+        
+        # Add console exporter if requested
+        if console:
+            console_log_exporter = ConsoleLogExporter()
+            log_provider.add_log_record_processor(BatchLogRecordProcessor(console_log_exporter))
+            click.echo("Console log export enabled")
+        
+        # Add OTLP log exporter
+        otlp_log_exporter = OTLPLogExporter(endpoint=endpoint)
+        log_provider.add_log_record_processor(BatchLogRecordProcessor(otlp_log_exporter))
+        
+        set_logger_provider(log_provider)
+        
+        # Create logger and send test log
+        handler = LoggingHandler(logger_provider=log_provider)
+        logger = logging.getLogger("test-logger")
+        logger.addHandler(handler)
+        logger.setLevel(getattr(logging, level))
+        
+        # Send the log
+        log_method = getattr(logger, level.lower())
+        log_method(message)
+        
+        # Force flush
+        log_provider.force_flush(timeout_millis=5000)
+        click.echo("Log sent to OTLP collector")
+        
+    except Exception as e:
+        click.echo(f"Error sending log: {e}", err=True)
+        exit(1)
+
+
+@cli.command('test-connectivity')
+@click.option('--host', default='localhost', help='OTLP collector host')
+@click.option('--port', default=4318, help='OTLP collector port')
+def test_connectivity(host, port):
+    """Test basic connectivity to the OTLP collector."""
+    import urllib.request
+    import urllib.error
+    
+    endpoints = [
+        f"http://{host}:{port}/",
+        f"http://{host}:{port}/v1/traces",
+        f"http://{host}:{port}/v1/logs",
+        f"http://{host}:{port}/v1/metrics",
+    ]
+    
+    for endpoint in endpoints:
+        try:
+            req = urllib.request.Request(endpoint)
+            response = urllib.request.urlopen(req, timeout=5)
+            click.echo(f"✅ {endpoint} - Status: {response.getcode()}")
+        except urllib.error.HTTPError as e:
+            if e.code == 405:  # Method not allowed is expected for POST endpoints
+                click.echo(f"✅ {endpoint} - Reachable (405 Method Not Allowed - expected)")
+            else:
+                click.echo(f"⚠️  {endpoint} - HTTP Error: {e.code}")
+        except urllib.error.URLError as e:
+            click.echo(f"❌ {endpoint} - Connection Error: {e}")
+        except Exception as e:
+            click.echo(f"❌ {endpoint} - Error: {e}")
+
+
+if __name__ == '__main__':
+    cli()

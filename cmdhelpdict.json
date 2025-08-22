@@ -1,13 +1,13 @@
 {
-    "az account list --output table": "lists all Azure subscriptions available to your account in a table format. It displays essential information like the subscription name, subscription ID, and the current state (Enabled/Disabled) in a neatly formatted table.",
-    "npm create-vite@latest . --template react-ts": "The command npm create-vite@latest . --template react-ts is used to scaffold a new Vite project using the latest version of the create-vite package. It sets up the project in the current directory (.) and uses the React TypeScript template (--template react-ts).",
-    "npm create-vite@latest .": "The command npm create-vite@latest . initializes a new Vite.js project in the current directory (.) using the latest version of the create-vite package.",
-    "rg \"example\"": "ripgrep, often abbreviated as rg, is a command-line search tool that recursively searches your current directory for a regex pattern. It's written in Rust and designed to be very fast, largely because it efficiently traverses directories and reads files while also taking advantage of Rust's performance characteristics.",
-    "az network bastion ssh --name MyBastionHost --resource-group MyResourceGroup --target-resource-id vmResourceId --auth-type AAD": "SSH to virtual machine using Azure Bastion using AAD.",
-    "az network bastion ssh --name MyBastionHost --resource-group MyResourceGroup --target-resource-id vmResourceId --auth-type ssh-key --username xyz --ssh-key C:/filepath/sshkey.pem": "SSH to virtual machine using Azure Bastion using ssh key file.",
-    "git checkout HEAD -- <file>": "Reset file to HEAD/last commit",
-    "az account set --subscription <Your-Subscription-ID>": "Set subscription Azure sub",
-    "docker run --name my-postgres -e POSTGRES_PASSWORD=mysecretpassword -p 5432:5432 -d postgres": "Run postgres docker container",
-    "psql -h localhost -p 5432 -U postgres": "Connect to postgres docker container",
-    "docker pull postgres": "Pull postgres docker image"
+  "az account list --output table": "lists all Azure subscriptions available to your account in a table format. It displays essential information like the subscription name, subscription ID, and the current state (Enabled/Disabled) in a neatly formatted table.",
+  "npm create-vite@latest . --template react-ts": "The command npm create-vite@latest . --template react-ts is used to scaffold a new Vite project using the latest version of the create-vite package. It sets up the project in the current directory (.) and uses the React TypeScript template (--template react-ts).",
+  "npm create-vite@latest .": "The command npm create-vite@latest . initializes a new Vite.js project in the current directory (.) using the latest version of the create-vite package.",
+  "rg \"example\"": "ripgrep, often abbreviated as rg, is a command-line search tool that recursively searches your current directory for a regex pattern. It's written in Rust and designed to be very fast, largely because it efficiently traverses directories and reads files while also taking advantage of Rust's performance characteristics.",
+  "az network bastion ssh --name MyBastionHost --resource-group MyResourceGroup --target-resource-id vmResourceId --auth-type AAD": "SSH to virtual machine using Azure Bastion using AAD.",
+  "az network bastion ssh --name MyBastionHost --resource-group MyResourceGroup --target-resource-id vmResourceId --auth-type ssh-key --username xyz --ssh-key C:/filepath/sshkey.pem": "SSH to virtual machine using Azure Bastion using ssh key file.",
+  "git checkout HEAD -- <file>": "Reset file to HEAD/last commit",
+  "az account set --subscription <Your-Subscription-ID>": "Set subscription Azure sub",
+  "docker run --name my-postgres -e POSTGRES_PASSWORD=mysecretpassword -p 5432:5432 -d postgres": "Run postgres docker container",
+  "psql -h localhost -p 5432 -U postgres": "Connect to postgres docker container",
+  "docker pull postgres": "Pull postgres docker image"
 }

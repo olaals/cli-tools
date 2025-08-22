@@ -1,0 +1,55 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["ollama>=0.2.1"]
+# ///
+
+"""
+Minimal utility to query Ollama's gemma3:4b model with an optional system prompt.
+
+Usage:
+    python main.py <message>
+Example:
+    python main.py "Write a haiku about Kubernetes"
+"""
+
+import sys
+from ollama import Client
+
+MODEL = "gemma3:4b"
+
+# 🔹 System prompt — adjust to set the assistant's behavior
+SYSTEM_PROMPT = (
+    "You are a concise, knowledgeable assistant. "
+    "If the user asks about how to run a command provide it"
+    "If it is unclear what the user wants, give multiple options"
+    "A command should always be on its own line so it is easily copy pasted to terminal"
+    "The user asks how to: "
+)
+
+def main() -> None:
+    if len(sys.argv) < 2:
+        print(f"Usage: {sys.argv[0]} <message>")
+        sys.exit(1)
+
+    message = " ".join(sys.argv[1:])
+
+    client = Client()  # defaults to http://localhost:11434
+
+    for chunk in client.chat(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": message},
+        ],
+        stream=True,
+    ):
+        delta = chunk.get("message", {}).get("content", "")
+        if delta:
+            sys.stdout.write(delta)
+            sys.stdout.flush()
+    print()  # newline after stream
+
+
+if __name__ == "__main__":
+    main()
