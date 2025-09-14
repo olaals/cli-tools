@@ -1,117 +1,390 @@
-#!/usr/bin/env bash
+#!/usr/bin/env -S uv run --script
+#
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["pathspec"]
+# ///
 
-# clip_recursive.sh
-# Usage: ./clip_recursive.sh [--tree] [--cmd "ls -la"] [--head n] filename1.txt dir1/ filename2.txt ...
+# clip_recursive.py
+# Usage:
+#   ./clip_recursive.py [--tree] [--cmd "ls -la"] [--head N] [--ignore PATTERN ...] [--debug] path1 path2 ...
+#
+# What’s new:
+# - Walks up from each input path, CWD, and the script dir to $HOME (inclusive),
+#   loading every .gitignore it finds and scoping patterns correctly.
+# - Uses `pathspec` for true .gitignore semantics (required; install with: pip install pathspec).
+# - --debug prints exactly what was copied/ignored; for ignored items it also shows which pattern matched.
 
-final_content=""
-include_tree=false
-cmd_command=""
-head_count=0
+from __future__ import annotations
 
-# Get the script's directory
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-gitignore_path="$script_dir/.gitignore" # Relative to script location
-exclude_list=()
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+from typing import Iterable, List, Optional, Set, Tuple
 
-# Read the .gitignore file and populate the exclude_list
-if [ -f "$gitignore_path" ]; then
-    while IFS= read -r line; do
-        # Skip comments and empty lines
-        if [[ "$line" != \#* ]] && [[ -n "$line" ]]; then
-            # remove any trailing slash so "bin/" → "bin"
-            pattern="${line%/}"
-            exclude_list+=("$pattern")
-        fi
-    done <"$gitignore_path"
-fi
+try:
+    import pathspec  # type: ignore
+except Exception:
+    print(
+        "Error: This script now requires 'pathspec' for correct .gitignore semantics.\n"
+        "Install it with:\n"
+        "  python3 -m pip install pathspec\n",
+        file=sys.stderr,
+    )
+    raise
 
-# Check if a path is excluded
-is_excluded() {
-    local item=$1
-    for pattern in "${exclude_list[@]}"; do
-        if [[ "$item" == $pattern || "$item" == */$pattern || "$item" == $pattern/* ]]; then
-            echo "Ignored: $item (matched pattern: $pattern)"
-            return 0
-        fi
-    done
-    return 1
-}
 
-# Loop through all arguments to handle optional flags
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-    --tree)
-        include_tree=true
-        shift
-        ;;
-    --cmd)
-        cmd_command="$2"
-        shift 2
-        ;;
-    --head)
-        head_count="$2"
-        shift 2
-        ;;
-    *)
-        break
-        ;;
-    esac
-done
+@dataclass
+class Args:
+    include_tree: bool
+    cmd_command: Optional[str]
+    head_count: int
+    ignore_patterns: List[str]
+    items: List[str]
+    debug: bool
 
-# Check for minimum number of arguments
-if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 [--tree] [--cmd \"command_to_run\"] [--head n] filename1.txt dir1/ filename2.txt ..."
-    exit 1
-fi
 
-# If --tree flag is present, add the output of `tree` to final_content
-if [ "$include_tree" = true ]; then
-    final_content+="== File Tree ==\n"
-    final_content+="$(tree -L 3 --gitignore)\n\n"
-fi
+@dataclass
+class Stats:
+    ignored_files: int = 0
+    ignored_dirs: int = 0
+    copied_files: int = 0
 
-# If --cmd flag is present, run the command and add its output to final_content
-if [ -n "$cmd_command" ]; then
-    final_content+="== Command Output ==\n"
-    final_content+="$(eval "$cmd_command" 2>&1)\n\n"
-fi
 
-# Recursive function to read a file or directory
-process_item() {
-    local item=$1
-    if is_excluded "$item"; then
+def parse_args(argv: List[str]) -> Args:
+    p = argparse.ArgumentParser(
+        description="Concatenate files/dirs to clipboard with optional tree/cmd/head and gitignore-style excludes."
+    )
+    p.add_argument("--tree", action="store_true", help="Include a directory tree of CWD (depth 3) before content.")
+    p.add_argument("--cmd", dest="cmd_command", type=str, default=None, help="Run a command and include its output.")
+    p.add_argument("--head", dest="head_count", type=int, default=0, help="Limit to first N lines of each file.")
+    p.add_argument(
+        "--ignore",
+        dest="ignore_patterns",
+        action="append",
+        default=[],
+        help="Gitignore-style pattern to ignore; can be repeated.",
+    )
+    p.add_argument("--debug", action="store_true", help="Print debug logs for each file/dir copied or ignored.")
+    p.add_argument("items", nargs="+", help="Files or directories to include.")
+    ns = p.parse_args(argv)
+    return Args(
+        include_tree=ns.tree,
+        cmd_command=ns.cmd_command,
+        head_count=ns.head_count,
+        ignore_patterns=ns.ignore_patterns,
+        items=ns.items,
+        debug=ns.debug,
+    )
+
+
+def read_gitignore_file(path: Path) -> List[str]:
+    lines: List[str] = []
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            lines.append(s)
+    except Exception:
+        pass
+    return lines
+
+
+def normalize_patterns(patterns: Iterable[str]) -> List[str]:
+    """
+    Post-process patterns:
+      - If a pattern ends with '/', also add pattern+'**' so dirs match recursively.
+      (Using pathspec, '/'-suffixed dir patterns already behave recursively, but adding
+       the '/**' companion keeps behavior consistent if a user passes such a pattern on CLI.)
+    """
+    out: List[str] = []
+    for pat in patterns:
+        out.append(pat)
+        if pat.endswith("/"):
+            out.append(pat.rstrip("/") + "/**")
+    return out
+
+
+def _safe_relpath(base: Path, p: Path) -> Optional[Path]:
+    try:
+        return p.resolve().relative_to(base.resolve())
+    except Exception:
+        return None
+
+
+def _prefix_gitignore_patterns(dir_rel_to_home: Optional[Path], lines: List[str]) -> List[str]:
+    """
+    Emulate git's scoping when merging multiple .gitignore files into one spec:
+      - Patterns in a .gitignore inside dir D apply under D.
+      - Leading '/' in that file means "relative to D".
+      - No leading '/' means "match anywhere under D".
+    We convert to HOME-anchored patterns:
+      base = path of D relative to HOME ('' if HOME itself)
+      if pattern startswith '!': keep '!' and transform the rest.
+      if pattern startswith '/': new = f"{base}/{pattern.lstrip('/')}"
+      else:                      new = f"{base}/**/{pattern}"   (or f"**/{pattern}" if base == '')
+    """
+    prefixed: List[str] = []
+    base = "" if dir_rel_to_home is None or str(dir_rel_to_home) in (".", "") else dir_rel_to_home.as_posix()
+    for raw in lines:
+        neg = raw.startswith("!")
+        body = raw[1:] if neg else raw
+
+        if body.startswith("/"):
+            anchored = f"{base}/{body.lstrip('/')}" if base else body.lstrip("/")
+        else:
+            anchored = f"{base}/**/{body}" if base else f"**/{body}"
+
+        prefixed.append(("!" if neg else "") + anchored)
+    return prefixed
+
+
+def collect_gitignore_patterns(start_paths: List[Path], home: Path, debug: bool) -> List[str]:
+    """
+    Walk upward from each start path to HOME (inclusive), collecting .gitignore files.
+    Deduplicate directories. Return HOME-scoped patterns.
+    """
+    seen_dirs: Set[Path] = set()
+    patterns: List[str] = []
+
+    def walk_up(start: Path) -> None:
+        cur = start if start.is_dir() else start.parent
+        cur = cur.resolve()
+        while True:
+            rel = _safe_relpath(home, cur)
+            if rel is None:
+                break  # outside HOME
+            if cur in seen_dirs:
+                if cur == home:
+                    break
+                cur = cur.parent
+                continue
+
+            seen_dirs.add(cur)
+            gi = cur / ".gitignore"
+            if gi.is_file():
+                lines = read_gitignore_file(gi)
+                if lines:
+                    scoped = _prefix_gitignore_patterns(None if cur == home else rel, lines)
+                    patterns.extend(scoped)
+                    if debug:
+                        print(f"[GITIGNORE] {gi} (+{len(scoped)} patterns)", file=sys.stderr)
+
+            if cur == home:
+                break
+            cur = cur.parent
+
+    for sp in start_paths:
+        walk_up(sp)
+
+    return patterns
+
+
+class Excluder:
+    """
+    True .gitignore semantics using pathspec.
+    Root is $HOME; all merged patterns are HOME-scoped.
+    """
+
+    def __init__(self, root: Path, patterns: List[str], debug: bool = False) -> None:
+        self.root = root
+        self.patterns = normalize_patterns(patterns)
+        self.spec = pathspec.PathSpec.from_lines("gitignore", self.patterns)
+        self.debug = debug
+
+    def _rel_posix(self, p: Path) -> str:
+        rel = _safe_relpath(self.root, p)
+        if rel is None:
+            return p.resolve().as_posix()
+        return rel.as_posix()
+
+    def is_excluded(self, p: Path) -> bool:
+        return self.spec.match_file(self._rel_posix(p))
+
+    def match_reason(self, p: Path) -> Optional[str]:
+        """Return the first pattern that excludes p (for debug)."""
+        rel = self._rel_posix(p)
+        for pat in self.patterns:
+            if _single_pattern_matches(pat, rel):
+                return pat
+        return None
+
+
+@lru_cache(maxsize=2048)
+def _compile_single_spec(pat: str) -> pathspec.PathSpec:  # type: ignore
+    return pathspec.PathSpec.from_lines("gitignore", [pat])
+
+
+def _single_pattern_matches(pat: str, rel_path: str) -> bool:
+    """Fast-ish test if a single gitignore pattern matches the given relative path."""
+    return _compile_single_spec(pat).match_file(rel_path)
+
+
+def generate_tree(root: Path, excluder: Excluder, max_depth: int = 3) -> str:
+    lines: List[str] = []
+
+    def walk(dir_path: Path, depth: int, prefix: str = "") -> None:
+        if depth > max_depth:
+            return
+        try:
+            entries = sorted(dir_path.iterdir(), key=lambda q: (not q.is_dir(), q.name.lower()))
+        except PermissionError:
+            return
+        visible = [e for e in entries if not excluder.is_excluded(e)]
+        for i, entry in enumerate(visible):
+            connector = "└── " if i == len(visible) - 1 else "├── "
+            lines.append(f"{prefix}{connector}{entry.name}")
+            if entry.is_dir():
+                extension = "    " if i == len(visible) - 1 else "│   "
+                walk(entry, depth + 1, prefix + extension)
+
+    lines.append(root.name)
+    walk(root, depth=1)
+    return "\n".join(lines)
+
+
+def head_text(text: str, n: int) -> str:
+    if n <= 0:
+        return text
+    return "\n".join(text.splitlines()[:n])
+
+
+def read_file_text(path: Path, head_count: int) -> str:
+    data = path.read_text(encoding="utf-8", errors="replace")
+    return head_text(data, head_count)
+
+
+def process_item(
+    item: Path, excluder: Excluder, head_count: int, final_parts: List[str], stats: Stats, debug: bool
+) -> None:
+    if not item.exists():
+        raise SystemExit(f"Item {item} does not exist.")
+
+    if excluder.is_excluded(item):
+        reason = excluder.match_reason(item) if debug else None
+        if item.is_dir():
+            stats.ignored_dirs += 1
+            if debug:
+                if reason:
+                    print(f"[IGNORED DIR]  {item}  (by: {reason})", file=sys.stderr)
+                else:
+                    print(f"[IGNORED DIR]  {item}", file=sys.stderr)
+        elif item.is_file():
+            stats.ignored_files += 1
+            if debug:
+                if reason:
+                    print(f"[IGNORED FILE] {item}  (by: {reason})", file=sys.stderr)
+                else:
+                    print(f"[IGNORED FILE] {item}", file=sys.stderr)
         return
-    fi
-    if [ -f "$item" ]; then
-        final_content+="== $item ==\n"
-        if [ "$head_count" -gt 0 ]; then
-            final_content+="$(head -n "$head_count" "$item")\n\n"
-        else
-            final_content+="$(cat "$item")\n\n"
-        fi
-    elif [ -d "$item" ]; then
-        for sub_item in "$item"/*; do
-            process_item "$sub_item"
-        done
-    else
-        echo "Item $item does not exist."
-        exit 1
-    fi
-}
 
-# Loop through remaining arguments to process files and directories
-for item in "$@"; do
-    process_item "$item"
-done
+    if item.is_file():
+        final_parts.append(f"== {item} ==\n")
+        final_parts.append(read_file_text(item, head_count))
+        final_parts.append("\n")
+        stats.copied_files += 1
+        if debug:
+            print(f"[COPIED FILE] {item}", file=sys.stderr)
+        return
 
-# Copy the final_content to clipboard using pbcopy if available, else fallback to xclip
-if command -v pbcopy &>/dev/null; then
-    echo -e "$final_content" | pbcopy
-elif command -v xclip &>/dev/null; then
-    echo -e "$final_content" | xclip -selection clipboard
-else
-    echo "Neither pbcopy nor xclip is installed. Cannot copy to clipboard."
-    exit 1
-fi
+    if item.is_dir():
+        if debug:
+            print(f"[ENTER DIR]   {item}", file=sys.stderr)
+        try:
+            for child in sorted(item.iterdir(), key=lambda q: (not q.is_dir(), q.name.lower())):
+                process_item(child, excluder, head_count, final_parts, stats, debug)
+        except FileNotFoundError:
+            raise SystemExit(f"Directory {item} does not exist.")
 
-echo "Contents of files and directories copied to clipboard."
+
+def run_command(cmd: str) -> str:
+    proc = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    out = proc.stdout or ""
+    err = proc.stderr or ""
+    return (out + err).rstrip("\n")
+
+
+def to_clipboard(s: str) -> None:
+    if shutil.which("pbcopy"):
+        subprocess.run(["pbcopy"], input=s, text=True, check=False)
+        print("Copied to clipboard via pbcopy.")
+        return
+    if shutil.which("wl-copy"):
+        subprocess.run(["wl-copy"], input=s, text=True, check=False)
+        print("Copied to clipboard via wl-copy.")
+        return
+    if shutil.which("xclip"):
+        p = subprocess.Popen(["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE, text=True)
+        p.communicate(s)
+        print("Copied to clipboard via xclip.")
+        return
+    if shutil.which("xsel"):
+        p = subprocess.Popen(["xsel", "--clipboard", "--input"], stdin=subprocess.PIPE, text=True)
+        p.communicate(s)
+        print("Copied to clipboard via xsel.")
+        return
+
+    sys.stderr.write("No clipboard tool found. Printing content to stdout.\n")
+    print(s, end="")
+
+
+def main() -> None:
+    args = parse_args(sys.argv[1:])
+
+    home = Path.home()
+    script_dir = Path(__file__).resolve().parent
+
+    # Gather .gitignore patterns from:
+    # - each input path upward to HOME
+    # - CWD upward to HOME
+    # - script dir upward to HOME
+    start_points = [Path(p) for p in args.items] + [Path.cwd(), script_dir]
+    gitignore_patterns = collect_gitignore_patterns(start_points, home, args.debug)
+
+    # Combine with CLI --ignore patterns
+    all_patterns = gitignore_patterns + list(args.ignore_patterns)
+
+    # Build excluder rooted at HOME so HOME-scoped patterns work uniformly
+    excluder = Excluder(home, all_patterns, debug=args.debug)
+
+    final_parts: List[str] = []
+    stats = Stats()
+
+    if args.include_tree:
+        final_parts.append("== File Tree ==\n")
+        final_parts.append(generate_tree(Path.cwd(), excluder, max_depth=3))
+        final_parts.append("\n\n")
+
+    if args.cmd_command:
+        final_parts.append("== Command Output ==\n")
+        final_parts.append(run_command(args.cmd_command))
+        final_parts.append("\n\n")
+
+    for item_str in args.items:
+        process_item(Path(item_str), excluder, args.head_count, final_parts, stats, args.debug)
+
+    final_content = "".join(final_parts).rstrip() + "\n"
+    to_clipboard(final_content)
+
+    print(
+        f"Stats: copied {stats.copied_files} files; ignored {stats.ignored_files} files and {stats.ignored_dirs} directories.",
+        file=sys.stderr,
+    )
+
+    # Helpful hint if we still see Godot cache/copied:
+    if args.debug:
+        print(
+            "Tip: to ignore Godot cache dirs, add '.godot/' (directory) to a .gitignore near your project, "
+            "and 'project.godot' is covered by '*.godot'.",
+            file=sys.stderr,
+        )
+
+
+if __name__ == "__main__":
+    main()
