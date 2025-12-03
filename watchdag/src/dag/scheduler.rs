@@ -1,6 +1,6 @@
 // src/dag/scheduler.rs
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use tracing::{debug, info, warn};
 
@@ -39,15 +39,7 @@ struct TaskInfo {
     /// Per-run state (None if not participating in the current run).
     run_state: Option<RunState>,
 
-    /// Last run ID in which this task "succeeded" (see note below).
-    ///
-    /// We update this when:
-    /// - the task completes with success, OR
-    /// - the task reports progress via `progress_on_*` (for long-lived tasks).
-    ///
-    /// This allows semantics like:
-    /// - If A->B->C and B is triggered and A previously succeeded,
-    ///   then B and C can run without re-running A.
+    /// Last run ID in which this task "succeeded".
     last_successful_run: Option<u64>,
 
     /// Last run ID in which this task failed.
@@ -117,7 +109,6 @@ impl ScheduledTask {
 pub struct Scheduler {
     graph: DagGraph,
     tasks: HashMap<TaskName, TaskInfo>,
-    default_use_hash: bool,
 
     /// Monotonically increasing run ID.
     run_counter: u64,
@@ -146,7 +137,6 @@ impl Scheduler {
         Self {
             graph,
             tasks,
-            default_use_hash,
             run_counter: 0,
             current_run_id: None,
         }
@@ -175,38 +165,27 @@ impl Scheduler {
 
     /// Handle a trigger for a task name.
     ///
-    /// This is called by the runtime whenever we decide that a task should
-    /// participate in the current run (e.g. due to file changes or manual
-    /// triggering).
+    /// Semantics:
+    /// - Include the *triggered* task and **all its downstream dependents**
+    ///   in this run (mark them `Pending`).
+    /// - Only run tasks whose dependencies are satisfied:
+    ///   - Either succeeded in this run
+    ///   - Or succeeded in a previous run (via `last_successful_run`).
     ///
-    /// Returns a list of tasks that are now ready to be executed.
+    /// This matches the README rules:
+    /// - A->B->C, trigger B  => B->C should run (A assumed up-to-date)
+    /// - A->B->C, trigger A & B => A->B->C runs once
     pub fn handle_trigger(&mut self, task: &str) -> Vec<ScheduledTask> {
         if self.current_run_id.is_none() {
-            // This shouldn't happen if the runtime calls `start_new_run` first,
-            // but be defensive and create a new run if needed.
+            // Defensive: if runtime forgot to start a run, create one.
             warn!(
                 "handle_trigger called with no active run; implicitly starting a new run"
             );
             self.start_new_run();
         }
 
-        if let Some(info) = self.tasks.get_mut(task) {
-            match info.run_state {
-                None => {
-                    info.run_state = Some(RunState::Pending);
-                    debug!(task = %info.name, "task marked as Pending in this run");
-                }
-                Some(RunState::Pending)
-                | Some(RunState::Running)
-                | Some(RunState::DoneSuccess)
-                | Some(RunState::DoneFailed) => {
-                    // Already part of this run; ignore duplicate trigger.
-                    debug!(
-                        task = %info.name,
-                        "task already participating in current run; ignoring additional trigger"
-                    );
-                }
-            }
+        if self.tasks.contains_key(task) {
+            self.mark_task_and_dependents_pending(task);
         } else {
             warn!(task = %task, "trigger for unknown task; ignoring");
         }
@@ -216,11 +195,7 @@ impl Scheduler {
         ready
     }
 
-    /// Handle "progress" from a long-lived task (or any task using
-    /// `progress_on_*` to indicate logical completion).
-    ///
-    /// This marks the task as `DoneSuccess` for the current run and may
-    /// schedule dependents whose dependencies are now satisfied.
+    /// Handle "progress" from a long-lived task.
     pub fn handle_progress(&mut self, task: &str) -> Vec<ScheduledTask> {
         let run_id = match self.current_run_id {
             Some(id) => id,
@@ -251,11 +226,6 @@ impl Scheduler {
     }
 
     /// Handle completion of a task process with a concrete outcome.
-    ///
-    /// - On success, we mark it as `DoneSuccess`, update historical success,
-    ///   and schedule dependents where possible.
-    /// - On failure, we mark it as `DoneFailed` and mark all triggered
-    ///   dependents in this run as `DoneFailed` as well.
     pub fn handle_completion(
         &mut self,
         task: &str,
@@ -309,71 +279,40 @@ impl Scheduler {
         self.graph.tasks()
     }
 
-    /// Determine whether all tasks are in a terminal state and clear
-    /// `current_run_id` if so.
-    fn maybe_finish_run(&mut self) {
-        if self.current_run_id.is_none() {
-            return;
-        }
+    /// Include a triggered task and all its downstream dependents in this run.
+    ///
+    /// - Tasks that were not yet part of the run (`run_state == None`) are
+    ///   marked `Pending`.
+    /// - Tasks already participating in this run keep their current state.
+    fn mark_task_and_dependents_pending(&mut self, root: &str) {
+        let mut stack: Vec<TaskName> = vec![root.to_string()];
+        let mut visited: HashSet<TaskName> = HashSet::new();
 
-        let any_active = self.tasks.values().any(|info| {
-            matches!(
-                info.run_state,
-                Some(RunState::Pending) | Some(RunState::Running)
-            )
-        });
+        while let Some(name) = stack.pop() {
+            if !visited.insert(name.clone()) {
+                continue;
+            }
 
-        if !any_active {
-            info!(
-                run_id = self.current_run_id,
-                "scheduler: all tasks terminal; marking run as finished"
-            );
-            self.current_run_id = None;
-        }
-    }
-
-    /// Collect tasks that are `Pending` and whose dependencies are satisfied,
-    /// mark them as `Running`, and return them as `ScheduledTask`s.
-    fn collect_new_ready_tasks(&mut self) -> Vec<ScheduledTask> {
-        let mut ready = Vec::new();
-
-        // We need to iterate twice: first to decide, then to mutate, to avoid
-        // borrowing conflicts.
-        let candidates: Vec<TaskName> = self
-            .tasks
-            .values()
-            .filter_map(|info| {
-                if matches!(info.run_state, Some(RunState::Pending))
-                    && self.deps_satisfied(info)
-                {
-                    Some(info.name.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        for name in candidates {
             if let Some(info) = self.tasks.get_mut(&name) {
-                debug!(task = %info.name, "dependencies satisfied; marking Running");
-                info.run_state = Some(RunState::Running);
-                ready.push(ScheduledTask::from_task_info(info));
+                if info.run_state.is_none() {
+                    info.run_state = Some(RunState::Pending);
+                    debug!(task = %info.name, "marked Pending for this run");
+                }
+
+                // Always traverse dependents so that downstream tasks are also
+                // included in the run.
+                for dep_name in self.graph.dependents_of(&name).iter().cloned() {
+                    stack.push(dep_name);
+                }
+            } else {
+                // Should not happen with validated config, but be defensive.
+                warn!(task = %name, "node in DAG not present in tasks map");
             }
         }
-
-        ready
     }
 
-    /// Check whether all dependencies of the given task are satisfied for the
-    /// *current run*.
-    ///
-    /// A dependency is considered satisfied if:
-    /// - In this run: its `run_state` is `DoneSuccess`, OR
-    /// - It is not part of this run (`run_state == None`) **and** it has a
-    ///   `last_successful_run` recorded (i.e., it succeeded in a previous run).
-    ///
-    /// If a dependency is `DoneFailed` in this run, or has never succeeded,
-    /// the dependencies are not satisfied.
+    /// Determine whether all dependencies of the given task are satisfied for
+    /// the *current run*.
     fn deps_satisfied(&self, info: &TaskInfo) -> bool {
         for dep_name in &info.deps {
             let dep = match self.tasks.get(dep_name) {
@@ -414,10 +353,62 @@ impl Scheduler {
         true
     }
 
+    /// Collect tasks that are `Pending` and whose dependencies are satisfied,
+    /// mark them as `Running`, and return them as `ScheduledTask`s.
+    fn collect_new_ready_tasks(&mut self) -> Vec<ScheduledTask> {
+        let mut ready = Vec::new();
+
+        // Decide first, then mutate to avoid borrowing issues.
+        let candidates: Vec<TaskName> = self
+            .tasks
+            .values()
+            .filter_map(|info| {
+                if matches!(info.run_state, Some(RunState::Pending))
+                    && self.deps_satisfied(info)
+                {
+                    Some(info.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for name in candidates {
+            if let Some(info) = self.tasks.get_mut(&name) {
+                debug!(task = %info.name, "dependencies satisfied; marking Running");
+                info.run_state = Some(RunState::Running);
+                ready.push(ScheduledTask::from_task_info(info));
+            }
+        }
+
+        ready
+    }
+
+    /// Determine whether all tasks are in a terminal state and clear
+    /// `current_run_id` if so.
+    fn maybe_finish_run(&mut self) {
+        if self.current_run_id.is_none() {
+            return;
+        }
+
+        let any_active = self.tasks.values().any(|info| {
+            matches!(
+                info.run_state,
+                Some(RunState::Pending) | Some(RunState::Running)
+            )
+        });
+
+        if !any_active {
+            info!(
+                run_id = self.current_run_id,
+                "scheduler: all tasks terminal; marking run as finished"
+            );
+            self.current_run_id = None;
+        }
+    }
+
     /// Mark all *triggered* dependents (and their transitively triggered
     /// dependents) of a failed task as `DoneFailed` for this run.
-    ///
-    /// This enforces the rule: "Failure of a task should fail dependents".
     fn mark_dependents_failed(&mut self, failed_task: &str) {
         let mut stack: Vec<TaskName> = self
             .graph
@@ -435,7 +426,6 @@ impl Scheduler {
                             task = %info.name,
                             "marking dependent as DoneFailed due to upstream failure"
                         );
-                        // Recurse to its own dependents.
                         stack.extend(
                             self.graph
                                 .dependents_of(&name)
