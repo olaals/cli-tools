@@ -1,0 +1,8 @@
+[task.A]
+cmd = "echo A"
+
+[task.B]
+cmd   = "echo B"
+
+
+# to test: both these run in parallel

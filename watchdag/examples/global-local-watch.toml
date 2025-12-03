@@ -1,0 +1,18 @@
+
+# Global default watch config
+[default]
+watch = ["src/**/*.py", "scripts/**/*.sh"]
+exclude = ["src/**/*tmp.py"]
+
+# first -> second
+
+[task.first]
+cmd = "echo first"
+watch = ["src/a/**"]          # only files under src/a
+exclude = ["src/a/tests/**"]    # ignore tests for first
+
+[task.second]
+cmd   = "echo second"
+after = ["first"]                   # second runs after first
+#
+# second has no watch section -> uses global [default.watch]/[default.exclude]

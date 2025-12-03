@@ -1,0 +1,41 @@
+# tasks.toml
+
+[default]
+watch = [
+  "src/**/*.py",
+  "scripts/**/*.sh",
+]
+exclude = [
+    "scripts/**/*.tmp.sh"
+]
+
+# A -> [B, C] -> D
+[task.A]
+cmd = "echo A"
+
+[task.B]
+cmd   = "echo B"
+after = ["A"]        # B waits for A
+
+[task.C]
+cmd   = "echo C"
+after = ["A"]        # C also waits for A
+
+[task.D]
+cmd   = "echo D"
+after = ["B", "C"]   # D waits for both B and C
+
+# [A, B] -> [C, D]
+[task.A2]
+cmd = "echo A2"
+
+[task.B2]
+cmd = "echo B2"
+
+[task.C2]
+cmd   = "echo C2"
+after = ["A2", "B2"]  # C2 waits for A2 and B2
+
+[task.D2]
+cmd   = "echo D2"
+after = ["A2", "B2"]  # D2 also waits for A2 and B2

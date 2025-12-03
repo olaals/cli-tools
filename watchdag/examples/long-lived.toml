@@ -1,0 +1,26 @@
+[default]
+watch = [
+  "texts/**.txt",
+  "scripts/**/*.sh",
+]
+exclude = [
+    "texts/**/*.tmp.txt"
+]
+
+[task.A]
+cmd = "echo starting; sleep 3; while true; do echo hello; sleep 3; done"
+long_lived = true # commands that might take very long time or never finish
+rerun = false # do not rerun command for subsequent runs, but attach to the same stdout as the first time it was started for progress_on_stdout, should default to true
+progress_on_stdout = "^hello"  # regex pattern to progress dag on for long lived commands (so say that this is done when the command prints hello or anything beginning with hello)
+
+[task.B]
+cmd = "echo starting; sleep 3; while true; do echo hello; sleep 3; done"
+long_lived = true
+rerun = true # let the command run (since long_lived=true), but on subsequent run exit the last command and rerun it
+progress_on_time = "3s"     # progress dag after 3 seconds
+after = ["A"]
+
+
+# if long_lived = true then progress_on_time or progress_on_stdout must be provided
+# progress_on_time or progress_on_stdout can also be provided for non long-lived commands as well
+# progress_on_time is in this case exact regardless if it finishes before or not
