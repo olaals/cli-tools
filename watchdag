@@ -1,0 +1,3 @@
+#!/bin/sh
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+RUST_LOG=debug cargo run --manifest-path "$SCRIPT_DIR/watchdag-cli/Cargo.toml" "$@"
