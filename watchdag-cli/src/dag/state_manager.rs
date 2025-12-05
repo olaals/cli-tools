@@ -45,6 +45,20 @@ impl<'a> StateManager<'a> {
             }
 
             if let Some(info) = self.tasks.get_mut(&name) {
+                // If this task is configured to run ONLY on its own files,
+                // and it is NOT the root trigger (i.e. it's a dependent),
+                // then we should skip it (unless it was already pending).
+                if info.run_on_own_files_only && name != root {
+                    if info.run_state.is_some() {
+                        // Already pending/running from a direct trigger or previous traversal.
+                        // Continue to dependents.
+                    } else {
+                        // Skip this task and do NOT traverse its dependents (via this path).
+                        debug!(task = %name, "skipping dependent because run_on_own_files_only=true");
+                        continue;
+                    }
+                }
+
                 if info.run_state.is_none() {
                     info.run_state = Some(RunState::Pending);
                     debug!(task = %info.name, "marked Pending for this run");

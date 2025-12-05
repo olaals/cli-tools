@@ -71,6 +71,7 @@ impl TaskConfigBuilder {
                 progress_on_stdout: None,
                 trigger_on_stdout: None,
                 progress_on_time: None,
+                run_on_own_files_only: false,
             }
         }
     }
@@ -119,6 +120,11 @@ impl TaskConfigBuilder {
 
     pub fn progress_on_time(mut self, duration: &str) -> Self {
         self.task.progress_on_time = Some(duration.to_string());
+        self
+    }
+
+    pub fn run_on_own_files_only(mut self, val: bool) -> Self {
+        self.task.run_on_own_files_only = val;
         self
     }
 

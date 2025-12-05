@@ -58,6 +58,8 @@ pub struct TaskInfo {
     pub use_hash: bool,
     /// Direct dependencies for this task (names in `after = [...]`).
     pub deps: Vec<TaskName>,
+    /// If true, only run if triggered by own files.
+    pub run_on_own_files_only: bool,
 
     /// Per-run state (None if not participating in the current run).
     pub run_state: Option<RunState>,
@@ -86,6 +88,7 @@ impl TaskInfo {
             progress_on_time: cfg.progress_on_time.clone(),
             use_hash: cfg.effective_use_hash(default_use_hash),
             deps,
+            run_on_own_files_only: cfg.run_on_own_files_only,
             run_state: None,
             last_successful_run: None,
             last_failed_run: None,

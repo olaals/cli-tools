@@ -25,3 +25,14 @@ pub fn init_tracing() {
             .init();
     });
 }
+
+/// Run a future with a 5-second timeout.
+#[allow(dead_code)]
+pub async fn with_timeout<F, T>(f: F) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    tokio::time::timeout(std::time::Duration::from_secs(5), f)
+        .await
+        .expect("Test timed out after 5 seconds")
+}

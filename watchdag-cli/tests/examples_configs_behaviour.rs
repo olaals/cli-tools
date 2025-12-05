@@ -9,9 +9,10 @@ use watchdag::engine::{TriggerQueue, TriggerWhileRunningBehaviour};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-#[test]
-fn configs_behaviour_toml_drives_queue_config() -> TestResult {
-    init_tracing();
+#[tokio::test]
+async fn configs_behaviour_toml_drives_queue_config() -> TestResult {
+    crate::common::with_timeout(async {
+        init_tracing();
 
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let cfg = load_and_validate(manifest.join("examples/configs-behaviour.toml"))?;
@@ -29,11 +30,13 @@ fn configs_behaviour_toml_drives_queue_config() -> TestResult {
     assert!(q.is_empty());
 
     Ok(())
+    }).await
 }
 
-#[test]
-fn queue_mode_merges_triggers_into_single_batch() -> TestResult {
-    init_tracing();
+#[tokio::test]
+async fn queue_mode_merges_triggers_into_single_batch() -> TestResult {
+    crate::common::with_timeout(async {
+        init_tracing();
 
     let mut q = TriggerQueue::new(TriggerWhileRunningBehaviour::Queue, 2);
 
@@ -47,11 +50,13 @@ fn queue_mode_merges_triggers_into_single_batch() -> TestResult {
     assert!(q.is_empty());
 
     Ok(())
+    }).await
 }
 
-#[test]
-fn cancel_mode_keeps_only_latest_trigger() -> TestResult {
-    init_tracing();
+#[tokio::test]
+async fn cancel_mode_keeps_only_latest_trigger() -> TestResult {
+    crate::common::with_timeout(async {
+        init_tracing();
 
     let mut q = TriggerQueue::new(TriggerWhileRunningBehaviour::Cancel, 3);
 
@@ -63,4 +68,5 @@ fn cancel_mode_keeps_only_latest_trigger() -> TestResult {
     assert_eq!(tasks[0], "B");
 
     Ok(())
+    }).await
 }

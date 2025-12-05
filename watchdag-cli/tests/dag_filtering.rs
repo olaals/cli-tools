@@ -18,6 +18,7 @@ fn make_file_cache() -> Arc<Mutex<FileCache>> {
 
 #[tokio::test]
 async fn test_dag_filtering_root_only() {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
     // DAG: A -> B -> C
     // Patterns: A and B match "src/common.rs".
     // Expected: Only A triggers (because A is an ancestor of B).
@@ -76,10 +77,12 @@ async fn test_dag_filtering_root_only() {
 
     // Should be no more events
     assert!(tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await.is_err());
+    }).await.expect("test timed out");
 }
 
 #[tokio::test]
 async fn test_dag_filtering_common_files_subset() {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
     // DAG: A -> B -> C
     // Patterns: B and C match "src/lib.rs". A does not.
     // Expected: Only B triggers (because B is ancestor of C, and A is not involved).
@@ -136,4 +139,5 @@ async fn test_dag_filtering_common_files_subset() {
     }
 
     assert!(tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await.is_err());
+    }).await.expect("test timed out");
 }

@@ -148,6 +148,11 @@ pub struct TaskConfig {
     #[serde(default)]
     pub after: Vec<String>,
 
+    /// If true, this task will only run if one of its own watched files triggered the run.
+    /// If false (default), it runs if it is part of the triggered DAG (e.g. as a dependent).
+    #[serde(default)]
+    pub run_on_own_files_only: bool,
+
     /// Optional per-task hash behaviour; if `None`, falls back to
     /// `default.use_hash` (or global default false).
     #[serde(default)]

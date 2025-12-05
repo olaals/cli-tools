@@ -8,9 +8,10 @@ use watchdag::config::load_and_validate;
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-#[test]
-fn global_watch_and_exclude_apply_to_all_tasks() -> TestResult {
-    init_tracing();
+#[tokio::test]
+async fn global_watch_and_exclude_apply_to_all_tasks() -> TestResult {
+    crate::common::with_timeout(async {
+        init_tracing();
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let config_path = manifest_dir.join("examples/global-watch.toml");
@@ -26,4 +27,5 @@ fn global_watch_and_exclude_apply_to_all_tasks() -> TestResult {
     assert!(!profiles.iter().any(|p| p.matches(tmp_script)));
 
     Ok(())
+    }).await
 }

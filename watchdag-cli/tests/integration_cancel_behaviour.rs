@@ -37,10 +37,12 @@ impl ControllableExecutor {
         }
     }
 
+    #[allow(dead_code)]
     fn get_started_tasks(&self) -> Vec<String> {
         self.started_tasks.lock().unwrap().clone()
     }
 
+    #[allow(dead_code)]
     fn allow_completion(&self, task: &str) {
         let map = self.completion_signals.lock().unwrap();
         if let Some(notify) = map.get(task) {
