@@ -31,11 +31,11 @@ impl Scheduler {
     /// Construct a scheduler from a validated [`ConfigFile`].
     pub fn from_config(cfg: &ConfigFile) -> Self {
         let graph = DagGraph::from_config(cfg);
-        let default_use_hash = cfg.default.use_hash.unwrap_or(false);
+        let default_use_hash = cfg.default_section().use_hash.unwrap_or(false);
 
         let mut tasks = HashMap::new();
 
-        for (name, tc) in cfg.task.iter() {
+        for (name, tc) in cfg.tasks().iter() {
             let deps = graph
                 .dependencies_of(name)
                 .iter()

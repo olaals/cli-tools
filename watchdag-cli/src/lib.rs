@@ -6,6 +6,7 @@ pub mod dag;
 pub mod engine;
 pub mod errors;
 pub mod exec;
+pub mod fs;
 pub mod logging;
 pub mod watch;
 pub mod types;
@@ -47,8 +48,8 @@ pub async fn run(args: CliArgs) -> Result<()> {
     let scheduler = Scheduler::from_config(&cfg);
 
     // Queue behaviour from [config].
-    let behaviour = cfg.config.triggered_while_running_behaviour;
-    let queue_length = cfg.config.queue_length;
+    let behaviour = cfg.config().triggered_while_running_behaviour;
+    let queue_length = cfg.config().queue_length;
 
     // Runtime event channel.
     let (rt_tx, rt_rx) = mpsc::channel::<RuntimeEvent>(64);
@@ -64,7 +65,7 @@ pub async fn run(args: CliArgs) -> Result<()> {
             root_dir,
             profiles,
             rt_tx.clone(),
-            cfg.config.hash_storage_mode,
+            cfg.config().hash_storage_mode,
         )?)
     } else {
         None
@@ -104,7 +105,8 @@ pub async fn run(args: CliArgs) -> Result<()> {
 
     // Construct the async IO shell around the core.
     let runtime = Runtime::new(core, rt_rx, executor);
-    runtime.run().await
+    runtime.run().await?;
+    Ok(())
 }
 
 /// Figure out a sensible project root for watching.
@@ -135,13 +137,13 @@ fn print_dry_run(cfg: &ConfigFile) {
     println!("watchdag dry-run");
     println!(
         "  config.triggered_while_running_behaviour = {:?}",
-        cfg.config.triggered_while_running_behaviour
+        cfg.config().triggered_while_running_behaviour
     );
-    println!("  config.queue_length = {}", cfg.config.queue_length);
+    println!("  config.queue_length = {}", cfg.config().queue_length);
     println!();
 
-    println!("tasks ({}):", cfg.task.len());
-    for (name, task) in cfg.task.iter() {
+    println!("tasks ({}):", cfg.tasks().len());
+    for (name, task) in cfg.tasks().iter() {
         println!("  - {name}");
         println!("      cmd: {}", task.cmd);
         if !task.after.is_empty() {

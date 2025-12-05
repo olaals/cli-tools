@@ -24,7 +24,7 @@ use serde::Deserialize;
 ///
 /// All sections are optional and have reasonable defaults.
 #[derive(Debug, Clone, Deserialize)]
-pub struct ConfigFile {
+pub struct RawConfigFile {
     /// Global behaviour config from `[config]`.
     #[serde(default)]
     pub config: ConfigSection,
@@ -38,6 +38,45 @@ pub struct ConfigFile {
     /// Keys are the *task names* (e.g. `"A"`, `"first"`, `"B2"`).
     #[serde(default)]
     pub task: BTreeMap<String, TaskConfig>,
+}
+
+/// Validated configuration.
+///
+/// This struct guarantees that the configuration is semantically valid
+/// (e.g. no DAG cycles, valid dependencies).
+/// It can only be constructed via `TryFrom<RawConfigFile>` or `load_and_validate`.
+#[derive(Debug, Clone)]
+pub struct ConfigFile {
+    config: ConfigSection,
+    default: DefaultSection,
+    task: BTreeMap<String, TaskConfig>,
+}
+
+impl ConfigFile {
+    pub fn config(&self) -> &ConfigSection {
+        &self.config
+    }
+
+    pub fn default_section(&self) -> &DefaultSection {
+        &self.default
+    }
+
+    pub fn tasks(&self) -> &BTreeMap<String, TaskConfig> {
+        &self.task
+    }
+    
+    /// Internal constructor for trusted sources (like tests or validation logic).
+    pub(crate) fn new_unchecked(
+        config: ConfigSection,
+        default: DefaultSection,
+        task: BTreeMap<String, TaskConfig>,
+    ) -> Self {
+        Self {
+            config,
+            default,
+            task,
+        }
+    }
 }
 
 use crate::types::{HashStorageMode, TriggerWhileRunningBehaviour};

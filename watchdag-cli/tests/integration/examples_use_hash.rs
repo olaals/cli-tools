@@ -1,6 +1,5 @@
-mod common;
-use crate::common::builders::{ConfigFileBuilder, TaskConfigBuilder};
-use crate::common::init_tracing;
+use watchdag_test_utils::builders::{ConfigFileBuilder, TaskConfigBuilder};
+use watchdag_test_utils::init_tracing;
 
 use std::collections::HashSet;
 use std::error::Error;
@@ -14,6 +13,7 @@ use watchdag::config::{
     load_and_validate, ConfigFile, TaskConfig,
 };
 use watchdag::engine::{RuntimeEvent, TriggerReason};
+use watchdag::fs::RealFileSystem;
 use watchdag::types::HashStorageMode;
 use watchdag::watch::{
     compute_hash_for_paths, spawn_watcher,
@@ -51,10 +51,10 @@ fn config_use_hash_defaults_and_overrides() -> TestResult {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let cfg = load_and_validate(manifest_dir.join("examples/use-hash.toml"))?;
 
-    let default_use_hash = cfg.default.use_hash.unwrap_or(false);
+    let default_use_hash = cfg.default_section().use_hash.unwrap_or(false);
 
-    let a: &TaskConfig = cfg.task.get("A").unwrap();
-    let b: &TaskConfig = cfg.task.get("B").unwrap();
+    let a: &TaskConfig = cfg.tasks().get("A").unwrap();
+    let b: &TaskConfig = cfg.tasks().get("B").unwrap();
 
     assert!(a.effective_use_hash(default_use_hash));
     assert!(!b.effective_use_hash(default_use_hash));
@@ -73,12 +73,13 @@ fn compute_hash_is_order_insensitive_and_tracks_content_changes() -> TestResult 
     fs::write(&f1, "hello")?;
     fs::write(&f2, "world")?;
 
-    let h1 = compute_hash_for_paths([&f1, &f2])?;
-    let h2 = compute_hash_for_paths([&f2, &f1])?;
+    let fs_impl = RealFileSystem;
+    let h1 = compute_hash_for_paths(&fs_impl, [&f1, &f2])?;
+    let h2 = compute_hash_for_paths(&fs_impl, [&f2, &f1])?;
     assert_eq!(h1, h2);
 
     fs::write(&f1, "HELLO")?;
-    let h3 = compute_hash_for_paths([&f1, &f2])?;
+    let h3 = compute_hash_for_paths(&fs_impl, [&f1, &f2])?;
     assert_ne!(h1, h3);
 
     Ok(())
@@ -126,9 +127,9 @@ async fn file_change_without_content_change_only_triggers_non_hashing_task() {
     // - [default].use_hash = true
     // - task A inherits use_hash = true
     // - task B overrides use_hash = false
-    let default_use_hash = cfg.default.use_hash.unwrap_or(false);
-    let a: &TaskConfig = cfg.task.get("A").expect("task A");
-    let b: &TaskConfig = cfg.task.get("B").expect("task B");
+    let default_use_hash = cfg.default_section().use_hash.unwrap_or(false);
+    let a: &TaskConfig = cfg.tasks().get("A").expect("task A");
+    let b: &TaskConfig = cfg.tasks().get("B").expect("task B");
     assert!(a.effective_use_hash(default_use_hash));
     assert!(!b.effective_use_hash(default_use_hash));
 

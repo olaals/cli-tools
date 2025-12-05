@@ -1,17 +1,17 @@
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
-use watchdag::config::{ConfigFile, ConfigSection, DefaultSection, TaskConfig};
+use watchdag::config::{ConfigFile, RawConfigFile, ConfigSection, DefaultSection, TaskConfig};
 
 /// Builder for `ConfigFile` to simplify test setup.
 pub struct ConfigFileBuilder {
-    config: ConfigFile,
+    config: RawConfigFile,
 }
 
 impl ConfigFileBuilder {
     pub fn new() -> Self {
         Self {
-            config: ConfigFile {
+            config: RawConfigFile {
                 config: ConfigSection::default(),
                 default: DefaultSection::default(),
                 task: BTreeMap::new(),
@@ -40,7 +40,7 @@ impl ConfigFileBuilder {
     }
 
     pub fn build(self) -> ConfigFile {
-        self.config
+        ConfigFile::try_from(self.config).expect("Failed to build valid config from builder")
     }
 }
 

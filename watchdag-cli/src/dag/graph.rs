@@ -33,7 +33,7 @@ impl DagGraph {
         let mut nodes: HashMap<String, DagNode> = HashMap::new();
 
         // First pass: create nodes with their dependency lists.
-        for (name, task) in cfg.task.iter() {
+        for (name, task) in cfg.tasks().iter() {
             nodes.insert(
                 name.clone(),
                 DagNode {

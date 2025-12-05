@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, info};
 
 use crate::engine::RuntimeEvent;
+use crate::fs::{FileSystem, RealFileSystem};
 use crate::types::HashStorageMode;
 use crate::watch::cache::FileCache;
 use crate::watch::event_handler::process_file_change;
@@ -95,9 +96,10 @@ pub fn spawn_watcher(
     let async_root = root.clone();
     let async_profiles = Arc::clone(&profiles);
     let async_dep_map = Arc::clone(&dep_map);
+    let fs: Arc<dyn FileSystem> = Arc::new(RealFileSystem);
 
     let mut hash_store: Box<dyn HashStore> = match hash_storage_mode {
-        HashStorageMode::File => Box::new(FileHashStore::new(async_root.clone())),
+        HashStorageMode::File => Box::new(FileHashStore::new(async_root.clone(), fs.clone())),
         HashStorageMode::Memory => Box::new(MemoryHashStore::new()),
     };
 
@@ -107,19 +109,21 @@ pub fn spawn_watcher(
         tracing::warn!("failed to prune stale hashes: {}", e);
     }
 
-    let hash_store = Arc::new(Mutex::new(hash_store));
-    let file_cache = Arc::new(Mutex::new(FileCache::new()));
-
     tokio::spawn(async move {
-        let runtime_tx = runtime_tx;
+        let file_cache = Arc::new(Mutex::new(FileCache::new()));
+        let hash_store = Arc::new(Mutex::new(hash_store));
 
         while let Some(event) = event_rx.recv().await {
-            debug!("received notify event: {:?}", event);
+            debug!(?event, "received notify event");
 
-            for path in &event.paths {
+            // We only care about events that modify content or create/remove files.
+            // Filter out others if needed.
+            // For now, we just process all paths in the event.
+            for path in event.paths {
                 process_file_change(
+                    fs.clone(),
                     &async_root,
-                    path,
+                    &path,
                     &async_profiles,
                     &async_dep_map,
                     &runtime_tx,
@@ -129,8 +133,7 @@ pub fn spawn_watcher(
                 .await;
             }
         }
-
-        debug!("file watcher loop ended");
+        debug!("watcher event loop finished");
     });
 
     Ok(WatcherHandle { _inner: watcher })

@@ -1,13 +1,13 @@
 // src/watch/patterns.rs
 
 use std::fmt;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 
 use crate::engine::TaskName;
+use crate::fs::FileSystem;
 
 /// Default watch configuration from `[default]` in the config.
 ///
@@ -214,6 +214,7 @@ fn build_globset(patterns: &[String]) -> Result<GlobSet> {
 /// This is used by the watcher when computing aggregated hashes for
 /// `use_hash = true` tasks.
 pub fn collect_matching_files(
+    fs: &dyn FileSystem,
     root: &Path,
     profile: &TaskWatchProfile,
 ) -> Result<Vec<PathBuf>> {
@@ -221,15 +222,10 @@ pub fn collect_matching_files(
     let mut stack = vec![root.to_path_buf()];
 
     while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir)
-            .with_context(|| format!("reading directory {:?}", dir))?
-        {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.is_dir() {
+        for path in fs.read_dir(&dir)? {
+            if fs.is_dir(&path) {
                 stack.push(path);
-            } else if path.is_file() {
+            } else if fs.is_file(&path) {
                 if let Ok(rel) = path.strip_prefix(root) {
                     let rel_str = rel.to_string_lossy().replace('\\', "/");
                     if profile.matches(&rel_str) {
@@ -254,14 +250,14 @@ pub fn build_profiles_from_config(
     cfg: &crate::config::model::ConfigFile,
 ) -> Result<(WatchDefaults, Vec<TaskWatchProfile>)> {
     let defaults = WatchDefaults {
-        watch: cfg.default.watch.clone(),
-        exclude: cfg.default.exclude.clone(),
+        watch: cfg.default_section().watch.clone(),
+        exclude: cfg.default_section().exclude.clone(),
     };
 
-    let default_use_hash = cfg.default.use_hash.unwrap_or(false);
+    let default_use_hash = cfg.default_section().use_hash.unwrap_or(false);
 
     let specs: Vec<RawTaskPatternSpec> = cfg
-        .task
+        .tasks()
         .iter()
         .map(|(name, t)| RawTaskPatternSpec {
             name: name.clone(),

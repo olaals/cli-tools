@@ -1,24 +1,21 @@
 // src/config/validate.rs
 
-use anyhow::{anyhow, Result};
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
 
-use crate::config::model::ConfigFile;
+use crate::config::model::{ConfigFile, RawConfigFile};
+use crate::errors::{Result, WatchdagError};
 
-/// Run basic semantic validation against a loaded configuration.
-///
-/// This checks:
-/// - there is at least one task
-/// - `triggered_while_running_behaviour` is valid ("queue" or "cancel")
-/// - `queue_length >= 1`
-/// - all `after` dependencies refer to existing tasks
-/// - the task graph has no cycles
-///
-/// It does **not**:
-/// - fully validate regexes (`progress_on_stdout` / `trigger_on_stdout`)
-/// - parse/validate duration strings (`progress_on_time`)
-pub fn validate_config(cfg: &ConfigFile) -> Result<()> {
+impl TryFrom<RawConfigFile> for ConfigFile {
+    type Error = crate::errors::WatchdagError;
+
+    fn try_from(raw: RawConfigFile) -> std::result::Result<Self, Self::Error> {
+        validate_raw_config(&raw)?;
+        Ok(ConfigFile::new_unchecked(raw.config, raw.default, raw.task))
+    }
+}
+
+fn validate_raw_config(cfg: &RawConfigFile) -> Result<()> {
     ensure_has_tasks(cfg)?;
     validate_global_config(cfg)?;
     validate_task_dependencies(cfg)?;
@@ -26,50 +23,49 @@ pub fn validate_config(cfg: &ConfigFile) -> Result<()> {
     Ok(())
 }
 
-fn ensure_has_tasks(cfg: &ConfigFile) -> Result<()> {
+fn ensure_has_tasks(cfg: &RawConfigFile) -> Result<()> {
     if cfg.task.is_empty() {
-        return Err(anyhow!(
-            "config must contain at least one [task.<name>] section"
+        return Err(WatchdagError::ConfigError(
+            "config must contain at least one [task.<name>] section".to_string(),
         ));
     }
     Ok(())
 }
 
-fn validate_global_config(cfg: &ConfigFile) -> Result<()> {
+fn validate_global_config(cfg: &RawConfigFile) -> Result<()> {
     // triggered_while_running_behaviour is now strongly typed and validated
     // during deserialization, so we don't need to check it here.
 
     if cfg.config.queue_length == 0 {
-        return Err(anyhow!(
-            "[config].queue_length must be >= 1 (got 0)"
+        return Err(WatchdagError::ConfigError(
+            "[config].queue_length must be >= 1 (got 0)".to_string(),
         ));
     }
 
     Ok(())
 }
 
-fn validate_task_dependencies(cfg: &ConfigFile) -> Result<()> {
+fn validate_task_dependencies(cfg: &RawConfigFile) -> Result<()> {
     for (name, task) in cfg.task.iter() {
         for dep in task.after.iter() {
             if !cfg.task.contains_key(dep) {
-                return Err(anyhow!(
+                return Err(WatchdagError::ConfigError(format!(
                     "task '{}' has unknown dependency '{}' in `after`",
-                    name,
-                    dep
-                ));
+                    name, dep
+                )));
             }
             if dep == name {
-                return Err(anyhow!(
+                return Err(WatchdagError::ConfigError(format!(
                     "task '{}' cannot depend on itself in `after`",
                     name
-                ));
+                )));
             }
         }
     }
     Ok(())
 }
 
-fn validate_dag(cfg: &ConfigFile) -> Result<()> {
+fn validate_dag(cfg: &RawConfigFile) -> Result<()> {
     // Build a simple petgraph graph from the tasks and their dependencies.
     //
     // Edge direction: dep -> task
@@ -94,10 +90,10 @@ fn validate_dag(cfg: &ConfigFile) -> Result<()> {
         Ok(_order) => Ok(()),
         Err(cycle) => {
             let node = cycle.node_id();
-            Err(anyhow!(
+            Err(WatchdagError::DagCycle(format!(
                 "cycle detected in task DAG involving task '{}'",
                 node
-            ))
+            )))
         }
     }
 }

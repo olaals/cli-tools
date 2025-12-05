@@ -1,8 +1,7 @@
 // tests/run_on_own_files_only.rs
 
-mod common;
-use crate::common::init_tracing;
-use crate::common::builders::{ConfigFileBuilder, TaskConfigBuilder};
+use watchdag_test_utils::init_tracing;
+use watchdag_test_utils::builders::{ConfigFileBuilder, TaskConfigBuilder};
 
 use std::error::Error;
 use std::future::Future;
@@ -57,7 +56,7 @@ impl ExecutorBackend for FakeExecutor {
                     task: t.name.clone(),
                     outcome: TaskOutcome::Success,
                 })
-                .await?;
+                .await.map_err(anyhow::Error::from)?;
             }
             Ok(())
         })
@@ -66,7 +65,7 @@ impl ExecutorBackend for FakeExecutor {
 
 #[tokio::test]
 async fn test_run_on_own_files_only_skips_dependent() -> TestResult {
-    crate::common::with_timeout(async {
+    watchdag_test_utils::with_timeout(async {
         init_tracing();
 
     // A -> B
@@ -114,7 +113,7 @@ async fn test_run_on_own_files_only_skips_dependent() -> TestResult {
 
 #[tokio::test]
 async fn test_run_on_own_files_only_runs_if_triggered() -> TestResult {
-    crate::common::with_timeout(async {
+    watchdag_test_utils::with_timeout(async {
         init_tracing();
 
     // A, B (independent)
@@ -161,7 +160,7 @@ async fn test_run_on_own_files_only_runs_if_triggered() -> TestResult {
 
 #[tokio::test]
 async fn test_run_on_own_files_only_runs_if_both_triggered() -> TestResult {
-    crate::common::with_timeout(async {
+    watchdag_test_utils::with_timeout(async {
         init_tracing();
 
     // A -> B
@@ -210,7 +209,7 @@ async fn test_run_on_own_files_only_runs_if_both_triggered() -> TestResult {
 
 #[tokio::test]
 async fn test_default_behavior_runs_dependent_without_files() -> TestResult {
-    crate::common::with_timeout(async {
+    watchdag_test_utils::with_timeout(async {
         init_tracing();
 
     // A -> B

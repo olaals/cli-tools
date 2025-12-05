@@ -1,6 +1,5 @@
 // tests/examples_long_lived.rs
-mod common;
-use crate::common::init_tracing;
+use watchdag_test_utils::init_tracing;
 
 use std::error::Error;
 use std::path::PathBuf;
@@ -24,18 +23,18 @@ fn long_lived_example_config_is_parsed_correctly() -> TestResult {
 
     // Global defaults
     assert_eq!(
-        cfg.default.watch,
+        cfg.default_section().watch,
         vec!["texts/**.txt".to_string(), "scripts/**/*.sh".to_string()]
     );
     assert_eq!(
-        cfg.default.exclude,
+        cfg.default_section().exclude,
         vec!["texts/**/*.tmp.txt".to_string()]
     );
-    assert_eq!(cfg.default.use_hash, None);
+    assert_eq!(cfg.default_section().use_hash, None);
 
-    assert_eq!(cfg.task.len(), 2);
+    assert_eq!(cfg.tasks().len(), 2);
 
-    let a = cfg.task.get("A").expect("task A must exist");
+    let a = cfg.tasks().get("A").expect("task A must exist");
     assert!(a.long_lived, "A should be marked long_lived");
     assert_eq!(a.rerun, Some(false));
     assert_eq!(a.progress_on_stdout.as_deref(), Some("^hello"));
@@ -43,7 +42,7 @@ fn long_lived_example_config_is_parsed_correctly() -> TestResult {
     assert!(a.trigger_on_stdout.is_none());
     assert!(a.after.is_empty(), "A should have no dependencies");
 
-    let b = cfg.task.get("B").expect("task B must exist");
+    let b = cfg.tasks().get("B").expect("task B must exist");
     assert!(b.long_lived, "B should be marked long_lived");
     assert_eq!(b.rerun, Some(true));
     assert_eq!(b.progress_on_time.as_deref(), Some("3s"));
@@ -63,13 +62,13 @@ fn long_lived_trigger_example_config_is_parsed_correctly() -> TestResult {
     let cfg = load_and_validate(manifest_dir.join("examples/long-lived-trigger.toml"))?;
 
     // No [default] section here, so defaults should be empty.
-    assert!(cfg.default.watch.is_empty());
-    assert!(cfg.default.exclude.is_empty());
-    assert_eq!(cfg.default.use_hash, None);
+    assert!(cfg.default_section().watch.is_empty());
+    assert!(cfg.default_section().exclude.is_empty());
+    assert_eq!(cfg.default_section().use_hash, None);
 
-    assert_eq!(cfg.task.len(), 2);
+    assert_eq!(cfg.tasks().len(), 2);
 
-    let a = cfg.task.get("A").expect("task A must exist");
+    let a = cfg.tasks().get("A").expect("task A must exist");
     assert!(a.long_lived);
     assert_eq!(a.rerun, Some(false));
     assert_eq!(a.trigger_on_stdout.as_deref(), Some("hello"));
@@ -77,7 +76,7 @@ fn long_lived_trigger_example_config_is_parsed_correctly() -> TestResult {
     assert!(a.progress_on_time.is_none());
     assert!(a.after.is_empty(), "A should have no dependencies");
 
-    let b = cfg.task.get("B").expect("task B must exist");
+    let b = cfg.tasks().get("B").expect("task B must exist");
     assert!(b.long_lived);
     assert_eq!(b.rerun, Some(true));
     assert_eq!(b.progress_on_time.as_deref(), Some("3s"));

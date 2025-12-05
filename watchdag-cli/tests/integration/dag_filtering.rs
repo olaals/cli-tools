@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use watchdag::engine::{RuntimeEvent, TriggerReason};
+use watchdag::fs::mock::MockFileSystem;
+use watchdag::fs::FileSystem;
 use watchdag::watch::cache::FileCache;
 use watchdag::watch::event_handler::process_file_change;
 use watchdag::watch::hash::{HashStore, MemoryHashStore};
@@ -63,7 +65,8 @@ async fn test_dag_filtering_root_only() {
 
     // Simulate change to "src/common.rs"
     let path = root.join("src/common.rs");
-    process_file_change(&root, &path, &profiles, &dep_map, &tx, hash_store, file_cache).await;
+    let fs: Arc<dyn FileSystem> = Arc::new(MockFileSystem::new());
+    process_file_change(fs, &root, &path, &profiles, &dep_map, &tx, hash_store, file_cache).await;
 
     // Expect exactly one trigger for A
     let event = rx.recv().await.expect("should receive event");
@@ -126,7 +129,8 @@ async fn test_dag_filtering_common_files_subset() {
 
     // Simulate change to "src/lib.rs"
     let path = root.join("src/lib.rs");
-    process_file_change(&root, &path, &profiles, &dep_map, &tx, hash_store, file_cache).await;
+    let fs: Arc<dyn FileSystem> = Arc::new(MockFileSystem::new());
+    process_file_change(fs, &root, &path, &profiles, &dep_map, &tx, hash_store, file_cache).await;
 
     // Expect exactly one trigger for B
     let event = rx.recv().await.expect("should receive event");

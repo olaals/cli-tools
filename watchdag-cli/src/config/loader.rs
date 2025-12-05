@@ -3,22 +3,18 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use crate::config::model::{ConfigFile, RawConfigFile};
+use crate::errors::Result;
 
-use crate::config::model::ConfigFile;
-use crate::config::validate::validate_config;
-
-/// Load a configuration file from a given path and return the raw `ConfigFile`.
+/// Load a configuration file from a given path and return the raw `RawConfigFile`.
 ///
 /// This only performs TOML deserialization; it does **not** perform semantic
 /// validation (DAG correctness, etc.). Use [`load_and_validate`] for that.
-pub fn load_from_path(path: impl AsRef<Path>) -> Result<ConfigFile> {
+pub fn load_from_path(path: impl AsRef<Path>) -> Result<RawConfigFile> {
     let path = path.as_ref();
-    let contents = fs::read_to_string(path)
-        .with_context(|| format!("reading config file at {:?}", path))?;
+    let contents = fs::read_to_string(path)?;
 
-    let config: ConfigFile = toml::from_str(&contents)
-        .with_context(|| format!("parsing TOML config from {:?}", path))?;
+    let config: RawConfigFile = toml::from_str(&contents)?;
 
     Ok(config)
 }
@@ -39,8 +35,8 @@ pub fn load_from_path(path: impl AsRef<Path>) -> Result<ConfigFile> {
 /// - DAG structures
 /// - runtime options, etc.
 pub fn load_and_validate(path: impl AsRef<Path>) -> Result<ConfigFile> {
-    let config = load_from_path(&path)?;
-    validate_config(&config)?;
+    let raw_config = load_from_path(&path)?;
+    let config = ConfigFile::try_from(raw_config)?;
     Ok(config)
 }
 

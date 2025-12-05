@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use tracing::debug;
 
+use crate::fs::FileSystem;
 use crate::watch::hash::compute_file_hash;
 
 /// In-memory cache of file hashes.
@@ -25,13 +26,13 @@ impl FileCache {
     }
 
     /// Get the hash for a file, computing and caching it if necessary.
-    pub fn get_or_compute(&mut self, path: &Path) -> Result<String> {
+    pub fn get_or_compute(&mut self, fs: &dyn FileSystem, path: &Path) -> Result<String> {
         if let Some(hash) = self.hashes.get(path) {
             return Ok(hash.clone());
         }
 
         debug!("cache miss: computing hash for {:?}", path);
-        let hash = compute_file_hash(path)?;
+        let hash = compute_file_hash(fs, path)?;
         self.hashes.insert(path.to_path_buf(), hash.clone());
         Ok(hash)
     }
@@ -44,9 +45,9 @@ impl FileCache {
     }
 
     /// Force update the hash for a file.
-    pub fn update(&mut self, path: &Path) -> Result<String> {
+    pub fn update(&mut self, fs: &dyn FileSystem, path: &Path) -> Result<String> {
         debug!("updating cache for {:?}", path);
-        let hash = compute_file_hash(path)?;
+        let hash = compute_file_hash(fs, path)?;
         self.hashes.insert(path.to_path_buf(), hash.clone());
         Ok(hash)
     }

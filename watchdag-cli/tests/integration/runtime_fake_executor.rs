@@ -1,12 +1,10 @@
 // tests/runtime_fake_executor.rs
 
-mod common;
-use crate::common::init_tracing;
-use crate::common::builders::{ConfigFileBuilder, TaskConfigBuilder};
+use watchdag_test_utils::init_tracing;
+use watchdag_test_utils::builders::{ConfigFileBuilder, TaskConfigBuilder};
+use watchdag_test_utils::fake_executor::FakeExecutor;
 
 use std::error::Error;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::mpsc;
@@ -15,10 +13,9 @@ use tokio::time::{timeout, Duration};
 use watchdag::config::ConfigFile;
 use watchdag::dag::Scheduler;
 use watchdag::engine::{
-    CoreRuntime, Runtime, RuntimeEvent, RuntimeOptions, TaskOutcome, TriggerReason,
+    CoreRuntime, Runtime, RuntimeEvent, RuntimeOptions, TriggerReason,
     TriggerWhileRunningBehaviour,
 };
-use watchdag::exec::ExecutorBackend;
 
 type TestResult = Result<(), Box<dyn Error>>;
 
@@ -28,53 +25,6 @@ fn simple_chain_config() -> ConfigFile {
         .with_task("A", TaskConfigBuilder::new("echo A").build())
         .with_task("B", TaskConfigBuilder::new("echo B").after("A").build())
         .build()
-}
-
-/// A fake executor that:
-/// - records which tasks were "run"
-/// - immediately reports TaskCompleted(Success) for each scheduled task.
-struct FakeExecutor {
-    runtime_tx: mpsc::Sender<RuntimeEvent>,
-    executed: Arc<Mutex<Vec<String>>>,
-}
-
-impl FakeExecutor {
-    fn new(
-        runtime_tx: mpsc::Sender<RuntimeEvent>,
-        executed: Arc<Mutex<Vec<String>>>,
-    ) -> Self {
-        Self { runtime_tx, executed }
-    }
-}
-
-impl ExecutorBackend for FakeExecutor {
-    fn spawn_ready_tasks(
-        &mut self,
-        tasks: Vec<watchdag::dag::ScheduledTask>,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = watchdag::errors::Result<()>> + Send + '_,
-        >,
-    > {
-        let tx = self.runtime_tx.clone();
-        let executed = Arc::clone(&self.executed);
-
-        Box::pin(async move {
-            for t in tasks {
-                {
-                    let mut guard = executed.lock().unwrap();
-                    guard.push(t.name.clone());
-                }
-
-                tx.send(RuntimeEvent::TaskCompleted {
-                    task: t.name.clone(),
-                    outcome: TaskOutcome::Success,
-                })
-                .await?;
-            }
-            Ok(())
-        })
-    }
 }
 
 #[tokio::test]

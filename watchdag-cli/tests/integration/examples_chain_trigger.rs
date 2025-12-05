@@ -1,7 +1,6 @@
 // tests/examples_chain_trigger.rs
-mod common;
-use crate::common::init_tracing;
-use crate::common::builders::{ConfigFileBuilder, TaskConfigBuilder};
+use watchdag_test_utils::{init_tracing, with_timeout};
+use watchdag_test_utils::builders::{ConfigFileBuilder, TaskConfigBuilder};
 
 use std::error::Error;
 
@@ -21,7 +20,7 @@ fn chain() -> ConfigFile {
 
 #[tokio::test]
 async fn triggering_b_after_a_success_runs_b_then_c_only() -> TestResult {
-    crate::common::with_timeout(async {
+    with_timeout(async {
         init_tracing();
 
     let mut scheduler = Scheduler::from_config(&chain());
@@ -53,7 +52,7 @@ async fn triggering_b_after_a_success_runs_b_then_c_only() -> TestResult {
 
 #[tokio::test]
 async fn triggering_a_and_b_together_runs_full_chain_once() -> TestResult {
-    crate::common::with_timeout(async {
+    with_timeout(async {
         init_tracing();
 
     let mut scheduler = Scheduler::from_config(&chain());
@@ -82,7 +81,7 @@ async fn triggering_a_and_b_together_runs_full_chain_once() -> TestResult {
 
 #[tokio::test]
 async fn manual_stepping_exposes_run_state_and_run_completion() -> TestResult {
-    crate::common::with_timeout(async {
+    with_timeout(async {
         init_tracing();
 
     let mut scheduler = Scheduler::from_config(&chain());

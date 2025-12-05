@@ -1,6 +1,5 @@
-mod common;
-use crate::common::init_tracing;
-use crate::common::builders::{ConfigFileBuilder, TaskConfigBuilder};
+use watchdag_test_utils::init_tracing;
+use watchdag_test_utils::builders::{ConfigFileBuilder, TaskConfigBuilder};
 
 use std::error::Error;
 use std::sync::{Arc, Mutex};

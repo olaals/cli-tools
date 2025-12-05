@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::engine::{RuntimeEvent, TriggerReason};
+use crate::fs::FileSystem;
 use crate::watch::cache::FileCache;
 use crate::watch::dag_filter::has_ancestor_in_matching;
 use crate::watch::hash::{compute_aggregate_hash, HashStore};
@@ -24,6 +25,7 @@ use crate::watch::patterns::{collect_matching_files, TaskWatchProfile};
 /// 3. Applies hash-based filtering if enabled
 /// 4. Sends trigger events to the runtime
 pub async fn process_file_change(
+    fs: Arc<dyn FileSystem>,
     root: &PathBuf,
     path: &PathBuf,
     profiles: &Arc<Vec<TaskWatchProfile>>,
@@ -89,6 +91,7 @@ pub async fn process_file_change(
     //    content change detection and emit a trigger.
     for profile in root_profiles {
         if should_trigger_task(
+            fs.clone(),
             root,
             path,
             &rel_str,
@@ -124,6 +127,7 @@ pub async fn process_file_change(
 ///
 /// Returns true if the task should be triggered, false if it should be skipped.
 async fn should_trigger_task(
+    fs: Arc<dyn FileSystem>,
     root: &PathBuf,
     abs_path: &PathBuf,
     rel_path: &str,
@@ -146,7 +150,7 @@ async fn should_trigger_task(
     tokio::task::spawn_blocking(move || {
         // If use_hash is enabled, only trigger when the aggregated
         // contents of all watched files for this task actually change.
-        let files = match collect_matching_files(&root, &profile) {
+        let files = match collect_matching_files(fs.as_ref(), &root, &profile) {
             Ok(f) => f,
             Err(err) => {
                 warn!(
@@ -184,7 +188,7 @@ async fn should_trigger_task(
             };
 
             for file_path in files {
-                match cache.get_or_compute(&file_path) {
+                match cache.get_or_compute(fs.as_ref(), &file_path) {
                     Ok(h) => file_hashes.push(h),
                     Err(err) => {
                         warn!(

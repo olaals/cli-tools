@@ -1,6 +1,5 @@
 // tests/examples_long_lived_trigger.rs
-mod common;
-use crate::common::init_tracing;
+use watchdag_test_utils::init_tracing;
 
 use std::error::Error;
 use std::path::PathBuf;
@@ -33,8 +32,8 @@ fn triggering_a_then_completing_schedules_b_after_a() -> TestResult {
     let cfg = load_and_validate(manifest_dir.join("examples/long-lived-trigger.toml"))?;
 
     // Sanity-check that the example still looks like we expect.
-    let task_a = cfg.task.get("A").expect("task A must exist");
-    let task_b = cfg.task.get("B").expect("task B must exist");
+    let task_a = cfg.tasks().get("A").expect("task A must exist");
+    let task_b = cfg.tasks().get("B").expect("task B must exist");
 
     assert!(task_a.long_lived, "A should be long_lived in example");
     assert_eq!(

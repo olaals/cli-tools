@@ -1,4 +1,5 @@
 pub mod builders;
+pub mod fake_executor;
 
 use std::sync::Once;
 use tracing_subscriber::{fmt, EnvFilter};

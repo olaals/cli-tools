@@ -1,5 +1,4 @@
-mod common;
-use crate::common::init_tracing;
+use watchdag_test_utils::init_tracing;
 
 use std::error::Error;
 use std::path::PathBuf;

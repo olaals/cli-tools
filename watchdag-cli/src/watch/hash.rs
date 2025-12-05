@@ -1,13 +1,14 @@
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader, BufWriter, Read, Write};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use blake3::Hasher;
 use tracing::{debug, info};
 
 use crate::engine::TaskName;
+use crate::fs::FileSystem;
 
 /// Relative path (from the watch root) to the hashes file.
 ///
@@ -23,10 +24,9 @@ fn hash_file_path(root: &Path) -> PathBuf {
 }
 
 /// Compute the hash of a single file.
-pub fn compute_file_hash(path: &Path) -> Result<String> {
+pub fn compute_file_hash(fs: &dyn FileSystem, path: &Path) -> Result<String> {
     let mut hasher = Hasher::new();
-    let mut file = File::open(path)
-        .with_context(|| format!("opening file for hashing: {:?}", path))?;
+    let mut file = fs.open_read(path)?;
     let mut buf = [0u8; 8192];
     loop {
         let n = file.read(&mut buf)?;
@@ -43,7 +43,7 @@ pub fn compute_file_hash(path: &Path) -> Result<String> {
 /// The caller is responsible for deciding which files belong to a task (e.g.
 /// all files matching the effective watch patterns). Order of `paths` does not
 /// matter; we sort them before hashing to keep the hash stable.
-pub fn compute_hash_for_paths<I, P>(paths: I) -> Result<String>
+pub fn compute_hash_for_paths<I, P>(fs: &dyn FileSystem, paths: I) -> Result<String>
 where
     I: IntoIterator<Item = P>,
     P: AsRef<Path>,
@@ -58,9 +58,9 @@ where
     paths_vec.sort();
 
     for path in paths_vec {
-        if path.is_file() {
+        if fs.is_file(&path) {
             debug!("hashing file {:?}", path);
-            let file_hash = compute_file_hash(&path)?;
+            let file_hash = compute_file_hash(fs, &path)?;
             hasher.update(file_hash.as_bytes());
         }
     }
@@ -92,35 +92,36 @@ pub trait HashStore: Send + Sync {
 /// Stores hashes in a file (`.watchdag/hashes`).
 pub struct FileHashStore {
     root: PathBuf,
+    fs: Arc<dyn FileSystem>,
 }
 
 impl FileHashStore {
-    pub fn new(root: PathBuf) -> Self {
-        Self { root }
+    pub fn new(root: PathBuf, fs: Arc<dyn FileSystem>) -> Self {
+        Self { root, fs }
     }
 }
 
 impl HashStore for FileHashStore {
     fn load(&self, task: &str) -> Result<Option<String>> {
-        let map = load_all_hashes(&self.root)?;
+        let map = load_all_hashes(self.fs.as_ref(), &self.root)?;
         Ok(map.get(task).cloned())
     }
 
     fn save(&mut self, task: &str, hash: &str) -> Result<()> {
-        let mut map = load_all_hashes(&self.root)?;
+        let mut map = load_all_hashes(self.fs.as_ref(), &self.root)?;
         map.insert(task.to_string(), hash.to_string());
-        save_all_hashes(&self.root, &map)?;
+        save_all_hashes(self.fs.as_ref(), &self.root, &map)?;
         info!(task = %task, hash = %hash, "stored task hash (file)");
         Ok(())
     }
 
     fn prune(&mut self, active_tasks: &[&str]) -> Result<()> {
-        let mut map = load_all_hashes(&self.root)?;
+        let mut map = load_all_hashes(self.fs.as_ref(), &self.root)?;
         let initial_len = map.len();
         map.retain(|k, _| active_tasks.contains(&k.as_str()));
         
         if map.len() < initial_len {
-            save_all_hashes(&self.root, &map)?;
+            save_all_hashes(self.fs.as_ref(), &self.root, &map)?;
             info!(
                 removed = initial_len - map.len(),
                 "pruned stale task hashes (file)"
@@ -174,15 +175,14 @@ impl HashStore for MemoryHashStore {
 }
 
 /// Load all stored task hashes from `<root>/.watchdag/hashes`.
-fn load_all_hashes(root: &Path) -> Result<HashMap<TaskName, String>> {
+fn load_all_hashes(fs: &dyn FileSystem, root: &Path) -> Result<HashMap<TaskName, String>> {
     let path = hash_file_path(root);
 
-    if !path.exists() {
+    if !fs.exists(&path) {
         return Ok(HashMap::new());
     }
 
-    let file = File::open(&path)
-        .with_context(|| format!("opening hash file at {:?}", path))?;
+    let file = fs.open_read(&path)?;
     let reader = BufReader::new(file);
 
     let mut map = HashMap::new();
@@ -202,23 +202,14 @@ fn load_all_hashes(root: &Path) -> Result<HashMap<TaskName, String>> {
 }
 
 /// Persist all task hashes to `<root>/.watchdag/hashes`.
-fn save_all_hashes(root: &Path, map: &HashMap<TaskName, String>) -> Result<()> {
+fn save_all_hashes(fs: &dyn FileSystem, root: &Path, map: &HashMap<TaskName, String>) -> Result<()> {
     let path = hash_file_path(root);
 
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!("creating hash directory at {:?}", parent)
-        })?;
-    }
-
-    let file = File::create(&path)
-        .with_context(|| format!("creating hash file at {:?}", path))?;
-    let mut writer = BufWriter::new(file);
-
+    let mut content = String::new();
     for (name, hash) in map.iter() {
-        writeln!(writer, "{} {}", name, hash)?;
+        content.push_str(&format!("{} {}\n", name, hash));
     }
 
-    writer.flush()?;
+    fs.write(&path, content.as_bytes())?;
     Ok(())
 }

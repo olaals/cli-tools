@@ -1,5 +1,4 @@
-mod common;
-use crate::common::init_tracing;
+use watchdag_test_utils::init_tracing;
 
 use std::error::Error;
 use std::path::PathBuf;
@@ -10,7 +9,7 @@ type TestResult = Result<(), Box<dyn Error>>;
 
 #[tokio::test]
 async fn global_watch_and_exclude_apply_to_all_tasks() -> TestResult {
-    crate::common::with_timeout(async {
+    watchdag_test_utils::with_timeout(async {
         init_tracing();
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -21,7 +20,7 @@ async fn global_watch_and_exclude_apply_to_all_tasks() -> TestResult {
 
     let src_py = "src/main.py";
     let matching = profiles.iter().filter(|p| p.matches(src_py)).count();
-    assert_eq!(matching, cfg.task.len());
+    assert_eq!(matching, cfg.tasks().len());
 
     let tmp_script = "scripts/foo.tmp.sh";
     assert!(!profiles.iter().any(|p| p.matches(tmp_script)));
